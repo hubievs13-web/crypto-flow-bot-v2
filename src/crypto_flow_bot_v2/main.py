@@ -44,14 +44,18 @@ def main() -> int:
 
     cycle_interval_seconds = _env_int("LIVE_CYCLE_INTERVAL_SECONDS", default=900)
     max_cycles = _env_optional_int("LIVE_RUNNER_MAX_CYCLES")
+    position_state_path = _env_optional_str("POSITION_STATE_PATH")
     LOGGER.info(
-        "Starting live Telegram-only runner: interval_seconds=%s max_cycles=%s",
+        "Starting live Telegram-only runner: interval_seconds=%s max_cycles=%s "
+        "position_state_path=%s",
         cycle_interval_seconds,
         max_cycles,
+        position_state_path,
     )
     runner = LiveAlertRunner.from_config(
         config=config,
         cycle_interval_seconds=cycle_interval_seconds,
+        position_state_path=position_state_path,
     )
     stats = runner.run(max_cycles=max_cycles)
     LOGGER.info(
@@ -92,6 +96,13 @@ def _env_optional_int(name: str) -> int | None:
         msg = f"{name} must be positive when provided."
         raise ValueError(msg)
     return value
+
+
+def _env_optional_str(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return None
+    return raw.strip()
 
 
 if __name__ == "__main__":
