@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, BotConfig, load_config
+from crypto_flow_bot_v2.config import BotConfig, DEFAULT_CONFIG_PATH, load_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
 from crypto_flow_bot_v2.logging import configure_logging, get_logger
 from crypto_flow_bot_v2.telegram import TelegramAlertService, TelegramAlertStatus
