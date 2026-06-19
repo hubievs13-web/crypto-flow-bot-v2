@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+from threading import Event, Thread
 
-from crypto_flow_bot_v2.config import BotConfig, DEFAULT_CONFIG_PATH, load_config
+from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, load_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
 from crypto_flow_bot_v2.logging import configure_logging, get_logger
-from crypto_flow_bot_v2.telegram import TelegramAlertService, TelegramAlertStatus
+from crypto_flow_bot_v2.telegram_start import TelegramStartCommandPoller
 
 LOGGER = get_logger(__name__)
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -43,8 +44,6 @@ def main() -> int:
         LOGGER.info("Live runner disabled. Set LIVE_RUNNER_ENABLED=true to start alerts.")
         return 0
 
-    _send_start_message(config)
-
     cycle_interval_seconds = _env_int("LIVE_CYCLE_INTERVAL_SECONDS", default=900)
     max_cycles = _env_optional_int("LIVE_RUNNER_MAX_CYCLES")
     position_state_path = _env_optional_str("POSITION_STATE_PATH")
@@ -60,7 +59,11 @@ def main() -> int:
         cycle_interval_seconds=cycle_interval_seconds,
         position_state_path=position_state_path,
     )
-    stats = runner.run(max_cycles=max_cycles)
+    start_poller = _start_telegram_start_poller(config)
+    try:
+        stats = runner.run(max_cycles=max_cycles)
+    finally:
+        _stop_telegram_start_poller(start_poller)
     LOGGER.info(
         "Live runner stopped: cycles=%s snapshots=%s decisions=%s opened=%s closed=%s "
         "alerts_sent=%s alert_errors=%s",
@@ -75,17 +78,24 @@ def main() -> int:
     return 0
 
 
-def _send_start_message(config: BotConfig) -> None:
-    try:
-        result = TelegramAlertService(config).send_start_message()
-    except Exception:
-        LOGGER.exception("Failed to send Telegram start message.")
-        return
+def _start_telegram_start_poller(config) -> tuple[Event, Thread]:
+    stop_event = Event()
+    poller = TelegramStartCommandPoller(config)
+    thread = Thread(
+        target=poller.run_forever,
+        args=(stop_event,),
+        name="telegram-start-poller",
+        daemon=True,
+    )
+    thread.start()
+    LOGGER.info("Telegram /start command poller started.")
+    return stop_event, thread
 
-    if result.status is TelegramAlertStatus.SENT:
-        LOGGER.info("Telegram start message sent.")
-    else:
-        LOGGER.info("Telegram start message skipped: %s", result.message)
+
+def _stop_telegram_start_poller(start_poller: tuple[Event, Thread]) -> None:
+    stop_event, thread = start_poller
+    stop_event.set()
+    thread.join(timeout=2)
 
 
 def _live_runner_enabled() -> bool:
