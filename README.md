@@ -38,6 +38,27 @@ PR 2 intentionally does **not** implement:
 - full RFA strategy calculation
 - backtest or replay
 
+### PR 3 — MarketSnapshot builder
+
+PR 3 adds the normalization layer that converts read-only Binance market data into `MarketSnapshot` objects for the future RFA Engine:
+
+- dependency-injected `MarketDataClient` protocol matching the PR 2 Binance client signatures
+- `MarketSnapshotBuilder.build()` for one symbol
+- `MarketSnapshotBuilder.build_many()` for configured or explicit symbol sets
+- normalized metrics for entry/context/macro price action, ATR volatility, open interest, funding, long/short ratio, taker pressure, and liquidation notional
+- coarse market-regime classification for snapshot context only
+- unit tests using exact-signature fakes
+
+PR 3 intentionally does **not** implement:
+
+- trade signal generation
+- confidence scoring
+- SL/TP/trailing/time-stop calculation
+- Telegram message sending
+- real order execution
+- backtest/replay
+- old direct-threshold signal logic
+
 ## Planned architecture
 
 Development order:
@@ -72,6 +93,20 @@ The bot is designed for Telegram alerts and virtual positions only. It must not 
 - Public forced liquidation orders: `/fapi/v1/allForceOrders`
 
 These endpoints are read-only market-data sources and use only public requests.
+
+## Snapshot metrics prepared in PR 3
+
+`MarketSnapshot.metrics` currently includes normalized values such as:
+
+- `entry_return_pct`, `context_return_pct`, `macro_return_pct`
+- `entry_atr`, `entry_atr_pct`
+- `open_interest`
+- `funding_rate`, `funding_mark_price`
+- `long_short_ratio`, `long_account`, `short_account`
+- `taker_buy_sell_ratio`, `taker_buy_volume`, `taker_sell_volume`
+- `liquidation_count`, `liquidation_buy_notional`, `liquidation_sell_notional`, `liquidation_total_notional`
+
+These are inputs for later RFA scoring. They are not standalone trading signals.
 
 ## Signal types
 
