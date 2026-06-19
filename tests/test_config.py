@@ -16,6 +16,12 @@ timeframes:
   context: 1h
   macro: 4h
 
+binance:
+  base_url: https://fapi.binance.com
+  timeout_seconds: 10.0
+  kline_limit: 300
+  derivatives_data_limit: 100
+
 telegram:
   enabled: false
   bot_token_env: TELEGRAM_BOT_TOKEN
@@ -53,15 +59,41 @@ def test_load_config_from_yaml_file(tmp_path: Path) -> None:
     assert config.timeframes.entry == "15m"
     assert config.timeframes.context == "1h"
     assert config.timeframes.macro == "4h"
+    assert config.binance.base_url == "https://fapi.binance.com"
+    assert config.binance.timeout_seconds == 10.0
+    assert config.binance.kline_limit == 300
+    assert config.binance.derivatives_data_limit == 100
     assert config.telegram.enabled is False
     assert config.risk.min_risk_reward == 1.5
     assert config.rfa_engine.min_signal_confidence == 70
 
 
 def test_parse_config_rejects_empty_symbols() -> None:
-    raw = {
-        "symbols": [],
+    raw = _valid_raw_config()
+    raw["symbols"] = []
+
+    with pytest.raises(ValueError, match="symbols"):
+        parse_config(raw)
+
+
+def test_parse_config_rejects_invalid_binance_limit() -> None:
+    raw = _valid_raw_config()
+    raw["binance"]["kline_limit"] = 1501
+
+    with pytest.raises(ValueError, match="kline_limit"):
+        parse_config(raw)
+
+
+def _valid_raw_config() -> dict[str, object]:
+    return {
+        "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
         "timeframes": {"entry": "15m", "context": "1h", "macro": "4h"},
+        "binance": {
+            "base_url": "https://fapi.binance.com",
+            "timeout_seconds": 10.0,
+            "kline_limit": 300,
+            "derivatives_data_limit": 100,
+        },
         "telegram": {"enabled": False, "bot_token_env": "A", "chat_id_env": "B"},
         "logging": {"level": "INFO", "jsonl_path": "logs/events.jsonl"},
         "risk": {
@@ -80,6 +112,3 @@ def test_parse_config_rejects_empty_symbols() -> None:
             "require_macro_alignment": True,
         },
     }
-
-    with pytest.raises(ValueError, match="symbols"):
-        parse_config(raw)
