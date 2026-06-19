@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import os
 
-from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, load_config
+from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, BotConfig, load_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
 from crypto_flow_bot_v2.logging import configure_logging, get_logger
+from crypto_flow_bot_v2.telegram import TelegramAlertService, TelegramAlertStatus
 
 LOGGER = get_logger(__name__)
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -42,6 +43,8 @@ def main() -> int:
         LOGGER.info("Live runner disabled. Set LIVE_RUNNER_ENABLED=true to start alerts.")
         return 0
 
+    _send_start_message(config)
+
     cycle_interval_seconds = _env_int("LIVE_CYCLE_INTERVAL_SECONDS", default=900)
     max_cycles = _env_optional_int("LIVE_RUNNER_MAX_CYCLES")
     position_state_path = _env_optional_str("POSITION_STATE_PATH")
@@ -70,6 +73,19 @@ def main() -> int:
         stats.telegram_alert_errors,
     )
     return 0
+
+
+def _send_start_message(config: BotConfig) -> None:
+    try:
+        result = TelegramAlertService(config).send_start_message()
+    except Exception:
+        LOGGER.exception("Failed to send Telegram start message.")
+        return
+
+    if result.status is TelegramAlertStatus.SENT:
+        LOGGER.info("Telegram start message sent.")
+    else:
+        LOGGER.info("Telegram start message skipped: %s", result.message)
 
 
 def _live_runner_enabled() -> bool:
