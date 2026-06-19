@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 from typing import Protocol
 
@@ -17,6 +18,7 @@ from crypto_flow_bot_v2.binance import BinanceFuturesClient
 from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.logging import get_logger
 from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision, VirtualPosition
+from crypto_flow_bot_v2.persistence import JsonPositionStateStore, PersistentVirtualPositionManager
 from crypto_flow_bot_v2.position_manager import (
     PositionEvent,
     PositionEventType,
@@ -154,16 +156,26 @@ class LiveAlertRunner:
         cls,
         config: BotConfig,
         cycle_interval_seconds: int = 900,
+        position_state_path: str | Path | None = None,
     ) -> LiveAlertRunner:
         """Build the production live runner stack from configuration."""
 
         data_client = BinanceFuturesClient.from_config(config.binance)
         snapshot_builder = MarketSnapshotBuilder(data_client=data_client, config=config)
+        position_manager: PositionManager = VirtualPositionManager(config)
+        if position_state_path is not None:
+            store = JsonPositionStateStore(Path(position_state_path))
+            position_manager = PersistentVirtualPositionManager(
+                manager=VirtualPositionManager(config),
+                store=store,
+            )
+            LOGGER.info("Virtual position persistence enabled: path=%s", position_state_path)
+
         return cls(
             config=config,
             snapshot_builder=snapshot_builder,
             signal_engine=RFAEngine(config),
-            position_manager=VirtualPositionManager(config),
+            position_manager=position_manager,
             telegram_alerts=TelegramAlertService(config),
             cycle_interval_seconds=cycle_interval_seconds,
         )
