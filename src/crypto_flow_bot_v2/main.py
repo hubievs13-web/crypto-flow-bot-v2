@@ -28,7 +28,13 @@ def main() -> int:
         "Binance data layer configured for public USDⓈ-M Futures REST data: base_url=%s",
         config.binance.base_url,
     )
-    LOGGER.info("No Binance private API, Telegram sending, or real trading execution is active.")
+    LOGGER.info(
+        "Telegram alert layer configured: enabled=%s bot_token_env=%s chat_id_env=%s",
+        config.telegram.enabled,
+        config.telegram.bot_token_env,
+        config.telegram.chat_id_env,
+    )
+    LOGGER.info("No Binance private API or real trading execution is active.")
     return 0
 
 

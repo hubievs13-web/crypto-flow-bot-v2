@@ -127,7 +127,9 @@ class BinanceFuturesClient:
         )
         payload = self._transport.get_json(KLINES_PATH, params)
         rows = _expect_list(payload, KLINES_PATH)
-        return tuple(_parse_candlestick(row, symbol=params["symbol"], interval=interval) for row in rows)
+        return tuple(
+            _parse_candlestick(row, symbol=params["symbol"], interval=interval) for row in rows
+        )
 
     def get_open_interest(self, symbol: str) -> OpenInterest:
         """Fetch present open interest for a symbol."""
