@@ -113,6 +113,26 @@ PR 5 intentionally does **not** implement:
 - backtest/replay
 - old direct-threshold signal logic
 
+### PR 6 — Telegram alerts
+
+PR 6 adds a Telegram alert layer for RFA decisions and virtual position events:
+
+- `TelegramAlertService` for signal and virtual-position alerts
+- `UrlLibTelegramTransport` for Telegram Bot API `sendMessage`
+- HTML-safe formatters for RFA signals and virtual position opened/closed events
+- environment-based bot token and chat ID lookup
+- disabled/missing-environment safe skips
+- unit tests with exact-signature fake Telegram transport
+
+PR 6 intentionally does **not** implement:
+
+- Binance private account access
+- real order placement, modification, cancellation, or execution
+- WebSocket execution loops
+- persistent position storage
+- backtest/replay
+- old direct-threshold signal logic
+
 ## Planned architecture
 
 Development order:
@@ -172,6 +192,14 @@ A single threshold crossing is insufficient. A full trade decision requires enou
 
 Position updates are driven by supplied prices and timestamps. The manager can close a virtual position through stop loss, trailing stop, final take profit, time stop, manual close, or reason invalidation.
 
+## Telegram alerts in PR 6
+
+Telegram alerts are disabled by default. To enable them, set `telegram.enabled: true` in `config.yaml` and provide the environment variables named by `bot_token_env` and `chat_id_env` in the environment.
+
+`TelegramAlertService.send_signal()` sends only fully alertable RFA decisions. `TelegramAlertService.send_position_event()` sends only opened or closed virtual position events.
+
+The package entrypoint loads and validates configuration only. It does not fetch market data, open positions, or send Telegram messages by itself.
+
 ## Signal types
 
 - `LONG_CONTINUATION`
@@ -187,7 +215,7 @@ Confidence bands:
 - `70–84`: normal signal
 - `85–100`: strong signal
 
-A full Telegram signal should be sent in later PRs only when confidence, risk/reward, multi-timeframe alignment, active-position checks, and cooldown checks all pass.
+A full Telegram signal should be sent only when confidence, risk/reward, multi-timeframe alignment, active-position checks, and cooldown checks all pass.
 
 ## Setup
 

@@ -9,6 +9,9 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
+DEFAULT_TELEGRAM_BASE_URL = "https://api.telegram.org"
+DEFAULT_TELEGRAM_TIMEOUT_SECONDS = 10.0
+DEFAULT_TELEGRAM_PARSE_MODE = "HTML"
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,14 +35,18 @@ class BinanceDataConfig:
 
 @dataclass(frozen=True, slots=True)
 class TelegramConfig:
-    """Telegram settings placeholder.
+    """Telegram alert settings.
 
-    Real message sending is intentionally not implemented in PR 2.
+    Bot tokens and chat IDs are read from environment variables. Config files store only the
+    environment variable names and transport settings.
     """
 
     enabled: bool
     bot_token_env: str
     chat_id_env: str
+    base_url: str
+    timeout_seconds: float
+    parse_mode: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,10 +183,27 @@ def _parse_binance(value: dict[str, Any]) -> BinanceDataConfig:
 
 
 def _parse_telegram(value: dict[str, Any]) -> TelegramConfig:
+    base_url = str(value.get("base_url", DEFAULT_TELEGRAM_BASE_URL)).strip().rstrip("/")
+    timeout_seconds = float(value.get("timeout_seconds", DEFAULT_TELEGRAM_TIMEOUT_SECONDS))
+    parse_mode = str(value.get("parse_mode", DEFAULT_TELEGRAM_PARSE_MODE)).strip()
+
+    if not base_url:
+        msg = "Telegram field 'base_url' must be non-empty."
+        raise ValueError(msg)
+    if timeout_seconds <= 0:
+        msg = "Telegram field 'timeout_seconds' must be positive."
+        raise ValueError(msg)
+    if not parse_mode:
+        msg = "Telegram field 'parse_mode' must be non-empty."
+        raise ValueError(msg)
+
     return TelegramConfig(
         enabled=bool(value.get("enabled", False)),
         bot_token_env=_required_str(value, "bot_token_env"),
         chat_id_env=_required_str(value, "chat_id_env"),
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+        parse_mode=parse_mode,
     )
 
 
