@@ -1,8 +1,10 @@
 # crypto-flow-bot-v2
 
-Clean scaffold for a Binance Futures crypto signal bot based on the planned **RFA Engine — Regime-Flow-Alpha Engine**.
+Clean Binance Futures crypto signal bot based on the planned **RFA Engine — Regime-Flow-Alpha Engine**.
 
-This repository is a fresh project. It does **not** copy the old `crypto-flow-bot` strategy logic. The old repository may be used later only as a reference for generic infrastructure patterns such as data access, Telegram alerts, virtual position tracking, JSONL logs, YAML config, and risk-management utilities.
+This repository is a fresh project. It does **not** copy the old `crypto-flow-bot` strategy logic. The old repository may be used only as a reference for generic infrastructure patterns such as public Binance Futures data, Telegram alerts, virtual position tracking, JSONL logs, YAML config, and risk-management utilities.
+
+The bot is designed for Telegram alerts and virtual positions only. It must not open or close real trades.
 
 ## Current scope
 
@@ -40,7 +42,7 @@ PR 2 intentionally does **not** implement:
 
 ### PR 3 — MarketSnapshot builder
 
-PR 3 adds the normalization layer that converts read-only Binance market data into `MarketSnapshot` objects for the future RFA Engine:
+PR 3 adds the normalization layer that converts read-only Binance market data into `MarketSnapshot` objects for the RFA Engine:
 
 - dependency-injected `MarketDataClient` protocol matching the PR 2 Binance client signatures
 - `MarketSnapshotBuilder.build()` for one symbol
@@ -86,6 +88,31 @@ PR 4 intentionally does **not** implement:
 - real order execution
 - old direct-threshold signal logic
 
+### PR 5 — virtual position manager
+
+PR 5 adds an in-memory lifecycle layer for simulated positions:
+
+- `VirtualPositionManager.open_from_decision()` for tradeable RFA decisions
+- one active virtual position per symbol
+- post-close cooldown checks using `risk.cooldown_minutes`
+- adaptive trailing-stop updates derived from the RFA ATR-based stop distance
+- final take-profit closure
+- stop-loss and trailing-stop closure
+- time-stop closure using `risk.max_position_minutes`
+- reason-invalidation closure
+- virtual PnL percentage calculation
+- unit tests for open, duplicate block, ignored `NO_TRADE`, cooldown, trailing, TP, time stop, short PnL, and invalidation paths
+
+PR 5 intentionally does **not** implement:
+
+- Binance private account access
+- real order placement, modification, or cancellation
+- Telegram API sending
+- persistent storage of positions
+- WebSocket execution loops
+- backtest/replay
+- old direct-threshold signal logic
+
 ## Planned architecture
 
 Development order:
@@ -98,8 +125,6 @@ Development order:
 6. Telegram alerts
 7. Backtest/replay
 8. Calibration and optimization
-
-The bot is designed for Telegram alerts and virtual positions only. It must not open or close real trades.
 
 ## Default market setup
 
@@ -141,6 +166,12 @@ The engine scores a snapshot only through multi-factor confluence. It checks reg
 
 A single threshold crossing is insufficient. A full trade decision requires enough aligned RFA components, context/macro confirmation, valid ATR exits, and configured minimum confidence.
 
+## Virtual position lifecycle in PR 5
+
+`VirtualPositionManager` consumes `SignalDecision` objects and tracks only virtual state. It blocks duplicate active positions by symbol and blocks new entries until the configured cooldown expires after a virtual close.
+
+Position updates are driven by supplied prices and timestamps. The manager can close a virtual position through stop loss, trailing stop, final take profit, time stop, manual close, or reason invalidation.
+
 ## Signal types
 
 - `LONG_CONTINUATION`
@@ -156,7 +187,7 @@ Confidence bands:
 - `70–84`: normal signal
 - `85–100`: strong signal
 
-A full Telegram signal should be sent in later PRs only when confidence, risk/reward, multi-timeframe alignment, cooldown, and active-position checks all pass.
+A full Telegram signal should be sent in later PRs only when confidence, risk/reward, multi-timeframe alignment, active-position checks, and cooldown checks all pass.
 
 ## Setup
 
