@@ -18,6 +18,7 @@ from urllib.request import Request, urlopen
 from crypto_flow_bot_v2.config import BotConfig, TelegramConfig
 from crypto_flow_bot_v2.models import SignalDecision, SignalDirection, SignalType, VirtualPosition
 from crypto_flow_bot_v2.position_manager import PositionEvent, PositionEventType
+from crypto_flow_bot_v2.start_message import format_start_message
 
 USER_AGENT = "crypto-flow-bot-v2/0.1.0"
 
@@ -173,6 +174,11 @@ class TelegramAlertService:
                 message="position event has no position payload",
             )
         return self._send(format_position_event(event))
+
+    def send_start_message(self) -> TelegramAlertResult:
+        """Send the Russian welcome message for Telegram /start."""
+
+        return self._send(format_start_message())
 
     def _send(self, text: str) -> TelegramAlertResult:
         telegram = self._config.telegram
