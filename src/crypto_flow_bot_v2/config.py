@@ -21,10 +21,20 @@ class TimeframeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BinanceDataConfig:
+    """Public Binance USDⓈ-M Futures market-data settings."""
+
+    base_url: str
+    timeout_seconds: float
+    kline_limit: int
+    derivatives_data_limit: int
+
+
+@dataclass(frozen=True, slots=True)
 class TelegramConfig:
     """Telegram settings placeholder.
 
-    PR 1 only stores configuration. Real message sending is intentionally not implemented.
+    Real message sending is intentionally not implemented in PR 2.
     """
 
     enabled: bool
@@ -69,6 +79,7 @@ class BotConfig:
 
     symbols: tuple[str, ...]
     timeframes: TimeframeConfig
+    binance: BinanceDataConfig
     telegram: TelegramConfig
     logging: LoggingConfig
     risk: RiskConfig
@@ -96,6 +107,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
 
     symbols = _parse_symbols(raw.get("symbols"))
     timeframes = _parse_timeframes(_require_mapping(raw, "timeframes"))
+    binance = _parse_binance(_require_mapping(raw, "binance"))
     telegram = _parse_telegram(_require_mapping(raw, "telegram"))
     logging_config = _parse_logging(_require_mapping(raw, "logging"))
     risk = _parse_risk(_require_mapping(raw, "risk"))
@@ -104,6 +116,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
     return BotConfig(
         symbols=symbols,
         timeframes=timeframes,
+        binance=binance,
         telegram=telegram,
         logging=logging_config,
         risk=risk,
@@ -136,6 +149,29 @@ def _parse_timeframes(value: dict[str, Any]) -> TimeframeConfig:
         entry=_required_str(value, "entry"),
         context=_required_str(value, "context"),
         macro=_required_str(value, "macro"),
+    )
+
+
+def _parse_binance(value: dict[str, Any]) -> BinanceDataConfig:
+    timeout_seconds = _required_float(value, "timeout_seconds")
+    kline_limit = _required_int(value, "kline_limit")
+    derivatives_data_limit = _required_int(value, "derivatives_data_limit")
+
+    if timeout_seconds <= 0:
+        msg = "Binance field 'timeout_seconds' must be positive."
+        raise ValueError(msg)
+    if not 1 <= kline_limit <= 1500:
+        msg = "Binance field 'kline_limit' must be between 1 and 1500."
+        raise ValueError(msg)
+    if not 1 <= derivatives_data_limit <= 500:
+        msg = "Binance field 'derivatives_data_limit' must be between 1 and 500."
+        raise ValueError(msg)
+
+    return BinanceDataConfig(
+        base_url=_required_str(value, "base_url").rstrip("/"),
+        timeout_seconds=timeout_seconds,
+        kline_limit=kline_limit,
+        derivatives_data_limit=derivatives_data_limit,
     )
 
 
