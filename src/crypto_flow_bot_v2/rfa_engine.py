@@ -6,7 +6,7 @@ send Telegram messages, track active positions, enforce cooldowns, run backtests
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from math import isfinite
 
@@ -161,7 +161,11 @@ class RFAEngine:
             )
 
         if best.confidence < self._config.rfa_engine.min_signal_confidence:
-            band = "watch_only" if best.confidence >= self._config.rfa_engine.watch_confidence else "ignore"
+            band = (
+                "watch_only"
+                if best.confidence >= self._config.rfa_engine.watch_confidence
+                else "ignore"
+            )
             return _no_trade(
                 snapshot=snapshot,
                 confidence=best.confidence,
@@ -301,7 +305,7 @@ def _score_direction(snapshot: MarketSnapshot, direction: SignalDirection) -> _S
 
 
 def _add_signed_return_component(
-    add: callable,
+    add: Callable[[int, str], None],
     reasons: list[str],
     signed_return_pct: float,
     name: str,
