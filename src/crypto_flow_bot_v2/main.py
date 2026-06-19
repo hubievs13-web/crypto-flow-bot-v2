@@ -18,13 +18,17 @@ def main() -> int:
     configure_logging(config.logging)
 
     LOGGER.info(
-        "crypto-flow-bot-v2 scaffold loaded: symbols=%s entry=%s context=%s macro=%s",
+        "crypto-flow-bot-v2 loaded: symbols=%s entry=%s context=%s macro=%s",
         ",".join(config.symbols),
         config.timeframes.entry,
         config.timeframes.context,
         config.timeframes.macro,
     )
-    LOGGER.info("PR 1 contains no Binance API, Telegram sending, or real trading execution.")
+    LOGGER.info(
+        "Binance data layer configured for public USDⓈ-M Futures REST data: base_url=%s",
+        config.binance.base_url,
+    )
+    LOGGER.info("No Binance private API, Telegram sending, or real trading execution is active.")
     return 0
 
 
