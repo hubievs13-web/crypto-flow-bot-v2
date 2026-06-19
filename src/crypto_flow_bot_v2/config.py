@@ -12,6 +12,7 @@ DEFAULT_CONFIG_PATH = Path("config.yaml")
 DEFAULT_TELEGRAM_BASE_URL = "https://api.telegram.org"
 DEFAULT_TELEGRAM_TIMEOUT_SECONDS = 10.0
 DEFAULT_TELEGRAM_PARSE_MODE = "HTML"
+DEFAULT_CALIBRATION_OBJECTIVE = "risk_adjusted_pnl"
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,22 @@ class RFAEngineConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CalibrationConfig:
+    """Offline calibration and optimization settings."""
+
+    enabled: bool
+    objective: str
+    min_trades: int
+    drawdown_penalty: float
+    max_trials: int
+    min_signal_confidence_values: tuple[int, ...]
+    min_risk_reward_values: tuple[float, ...]
+    atr_stop_multiplier_values: tuple[float, ...]
+    trailing_atr_multiplier_values: tuple[float, ...]
+    cooldown_minutes_values: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BotConfig:
     """Top-level application configuration."""
 
@@ -91,6 +108,7 @@ class BotConfig:
     logging: LoggingConfig
     risk: RiskConfig
     rfa_engine: RFAEngineConfig
+    calibration: CalibrationConfig
 
 
 def load_config(path: str | Path = DEFAULT_CONFIG_PATH) -> BotConfig:
@@ -119,6 +137,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
     logging_config = _parse_logging(_require_mapping(raw, "logging"))
     risk = _parse_risk(_require_mapping(raw, "risk"))
     rfa_engine = _parse_rfa_engine(_require_mapping(raw, "rfa_engine"))
+    calibration = _parse_calibration(raw.get("calibration", {}))
 
     return BotConfig(
         symbols=symbols,
@@ -128,6 +147,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
         logging=logging_config,
         risk=risk,
         rfa_engine=rfa_engine,
+        calibration=calibration,
     )
 
 
@@ -240,6 +260,74 @@ def _parse_rfa_engine(value: dict[str, Any]) -> RFAEngineConfig:
     )
 
 
+def _parse_calibration(value: Any) -> CalibrationConfig:
+    if not isinstance(value, dict):
+        msg = "Config section 'calibration' must be a mapping."
+        raise ValueError(msg)
+
+    config = CalibrationConfig(
+        enabled=bool(value.get("enabled", False)),
+        objective=str(value.get("objective", DEFAULT_CALIBRATION_OBJECTIVE)).strip(),
+        min_trades=_optional_int(value, "min_trades", 1),
+        drawdown_penalty=_optional_float(value, "drawdown_penalty", 1.0),
+        max_trials=_optional_int(value, "max_trials", 100),
+        min_signal_confidence_values=_optional_int_tuple(
+            value,
+            "min_signal_confidence_values",
+            (70,),
+        ),
+        min_risk_reward_values=_optional_float_tuple(value, "min_risk_reward_values", (1.5,)),
+        atr_stop_multiplier_values=_optional_float_tuple(
+            value,
+            "atr_stop_multiplier_values",
+            (1.5,),
+        ),
+        trailing_atr_multiplier_values=_optional_float_tuple(
+            value,
+            "trailing_atr_multiplier_values",
+            (1.0,),
+        ),
+        cooldown_minutes_values=_optional_int_tuple(value, "cooldown_minutes_values", (60,)),
+    )
+    _validate_calibration(config)
+    return config
+
+
+def _validate_calibration(config: CalibrationConfig) -> None:
+    if config.objective != DEFAULT_CALIBRATION_OBJECTIVE:
+        msg = "Calibration field 'objective' must be 'risk_adjusted_pnl'."
+        raise ValueError(msg)
+    if config.min_trades < 0:
+        msg = "Calibration field 'min_trades' cannot be negative."
+        raise ValueError(msg)
+    if config.drawdown_penalty < 0:
+        msg = "Calibration field 'drawdown_penalty' cannot be negative."
+        raise ValueError(msg)
+    if config.max_trials <= 0:
+        msg = "Calibration field 'max_trials' must be positive."
+        raise ValueError(msg)
+
+    for confidence in config.min_signal_confidence_values:
+        if not 0 <= confidence <= 100:
+            msg = "Calibration confidence values must be between 0 and 100."
+            raise ValueError(msg)
+    _validate_positive_tuple(config.min_risk_reward_values, "min_risk_reward_values")
+    _validate_positive_tuple(config.atr_stop_multiplier_values, "atr_stop_multiplier_values")
+    _validate_positive_tuple(
+        config.trailing_atr_multiplier_values,
+        "trailing_atr_multiplier_values",
+    )
+    if any(value < 0 for value in config.cooldown_minutes_values):
+        msg = "Calibration field 'cooldown_minutes_values' cannot contain negative values."
+        raise ValueError(msg)
+
+
+def _validate_positive_tuple(values: tuple[float, ...], field_name: str) -> None:
+    if any(value <= 0 for value in values):
+        msg = f"Calibration field '{field_name}' must contain only positive values."
+        raise ValueError(msg)
+
+
 def _required_str(value: dict[str, Any], key: str) -> str:
     item = value.get(key)
     if not isinstance(item, str) or not item.strip():
@@ -262,3 +350,49 @@ def _required_int(value: dict[str, Any], key: str) -> int:
         msg = f"Config value '{key}' must be an integer."
         raise ValueError(msg)
     return item
+
+
+def _optional_float(value: dict[str, Any], key: str, default: float) -> float:
+    item = value.get(key, default)
+    if isinstance(item, bool) or not isinstance(item, int | float):
+        msg = f"Config value '{key}' must be numeric."
+        raise ValueError(msg)
+    return float(item)
+
+
+def _optional_int(value: dict[str, Any], key: str, default: int) -> int:
+    item = value.get(key, default)
+    if isinstance(item, bool) or not isinstance(item, int):
+        msg = f"Config value '{key}' must be an integer."
+        raise ValueError(msg)
+    return item
+
+
+def _optional_float_tuple(
+    value: dict[str, Any],
+    key: str,
+    default: tuple[float, ...],
+) -> tuple[float, ...]:
+    item = value.get(key, list(default))
+    if not isinstance(item, list) or not item:
+        msg = f"Config value '{key}' must be a non-empty list."
+        raise ValueError(msg)
+    if any(isinstance(entry, bool) or not isinstance(entry, int | float) for entry in item):
+        msg = f"Config value '{key}' must contain only numeric values."
+        raise ValueError(msg)
+    return tuple(float(entry) for entry in item)
+
+
+def _optional_int_tuple(
+    value: dict[str, Any],
+    key: str,
+    default: tuple[int, ...],
+) -> tuple[int, ...]:
+    item = value.get(key, list(default))
+    if not isinstance(item, list) or not item:
+        msg = f"Config value '{key}' must be a non-empty list."
+        raise ValueError(msg)
+    if any(isinstance(entry, bool) or not isinstance(entry, int) for entry in item):
+        msg = f"Config value '{key}' must contain only integer values."
+        raise ValueError(msg)
+    return tuple(item)
