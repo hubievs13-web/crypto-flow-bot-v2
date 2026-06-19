@@ -55,6 +55,31 @@ class PositionEvent:
     message: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PositionStateSnapshot:
+    """Serializable state for one active virtual position."""
+
+    position: VirtualPosition
+    peak_price: float
+    trough_price: float
+    hit_take_profit_levels: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PositionManagerSnapshot:
+    """Serializable state for the virtual position manager."""
+
+    positions: tuple[PositionStateSnapshot, ...] = ()
+    cooldown_until: dict[str, datetime] | None = None
+
+    def normalized_cooldown_until(self) -> dict[str, datetime]:
+        """Return cooldown state as a normalized mutable mapping."""
+
+        if self.cooldown_until is None:
+            return {}
+        return {_normalize_symbol(symbol): timestamp for symbol, timestamp in self.cooldown_until.items()}
+
+
 @dataclass(slots=True)
 class _PositionState:
     position: VirtualPosition
@@ -99,6 +124,40 @@ class VirtualPositionManager:
 
         cooldown_until = self._cooldown_until.get(_normalize_symbol(symbol))
         return cooldown_until is not None and timestamp < cooldown_until
+
+    def snapshot_state(self) -> PositionManagerSnapshot:
+        """Return serializable virtual-position state for persistence."""
+
+        positions = tuple(
+            PositionStateSnapshot(
+                position=state.position,
+                peak_price=state.peak_price,
+                trough_price=state.trough_price,
+                hit_take_profit_levels=tuple(sorted(state.hit_take_profit_levels)),
+            )
+            for state in self._positions.values()
+        )
+        return PositionManagerSnapshot(
+            positions=positions,
+            cooldown_until=dict(self._cooldown_until),
+        )
+
+    def restore_state(self, snapshot: PositionManagerSnapshot) -> None:
+        """Replace in-memory virtual-position state from a persistence snapshot."""
+
+        self._positions = {}
+        for item in snapshot.positions:
+            symbol = _normalize_symbol(item.position.symbol)
+            if symbol in self._positions:
+                msg = f"duplicate active position in snapshot for symbol {symbol}."
+                raise ValueError(msg)
+            self._positions[symbol] = _PositionState(
+                position=item.position,
+                peak_price=item.peak_price,
+                trough_price=item.trough_price,
+                hit_take_profit_levels=set(item.hit_take_profit_levels),
+            )
+        self._cooldown_until = snapshot.normalized_cooldown_until()
 
     def open_from_decision(self, decision: SignalDecision) -> PositionEvent:
         """Open a virtual position from a tradeable RFA decision when gates allow it."""
