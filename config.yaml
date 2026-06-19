@@ -1,0 +1,33 @@
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+
+timeframes:
+  entry: 15m
+  context: 1h
+  macro: 4h
+
+telegram:
+  enabled: false
+  bot_token_env: TELEGRAM_BOT_TOKEN
+  chat_id_env: TELEGRAM_CHAT_ID
+
+logging:
+  level: INFO
+  jsonl_path: logs/rfa-events.jsonl
+
+risk:
+  min_risk_reward: 1.5
+  atr_stop_multiplier: 1.5
+  atr_tp_multipliers: [1.5, 2.5, 4.0]
+  trailing_atr_multiplier: 1.0
+  max_position_minutes: 240
+  cooldown_minutes: 60
+
+rfa_engine:
+  min_signal_confidence: 70
+  watch_confidence: 60
+  strong_signal_confidence: 85
+  require_context_alignment: true
+  require_macro_alignment: true
