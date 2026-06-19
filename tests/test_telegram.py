@@ -8,6 +8,7 @@ from crypto_flow_bot_v2.position_manager import (
     PositionEventType,
     PositionExitReason,
 )
+from crypto_flow_bot_v2.start_message import format_start_message
 from crypto_flow_bot_v2.telegram import (
     TelegramAlertService,
     TelegramAlertStatus,
@@ -32,6 +33,34 @@ class FakeTelegramTransport:
     ) -> TelegramSendResult:
         self.calls.append((bot_token, chat_id, text, parse_mode))
         return TelegramSendResult(ok=True, message_id=42)
+
+
+def test_format_start_message_is_russian_welcome() -> None:
+    text = format_start_message()
+
+    assert "Привет" in text
+    assert "Crypto Flow Bot" in text
+    assert "Telegram-сигналы" in text
+    assert "Реальные сделки не открываю" in text
+
+
+def test_telegram_alert_service_sends_start_message(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    monkeypatch.setenv("CHAT_ENV", "CHAT")
+    transport = FakeTelegramTransport()
+    service = TelegramAlertService(_config(enabled=True), transport=transport)
+
+    result = service.send_start_message()
+
+    assert result.status is TelegramAlertStatus.SENT
+    assert result.send_result == TelegramSendResult(ok=True, message_id=42)
+    assert len(transport.calls) == 1
+    bot_token, chat_id, text, parse_mode = transport.calls[0]
+    assert bot_token == "TOKEN"
+    assert chat_id == "CHAT"
+    assert "Привет" in text
+    assert "Реальные сделки не открываю" in text
+    assert parse_mode == "HTML"
 
 
 def test_format_signal_decision_includes_core_trade_plan() -> None:
