@@ -64,7 +64,13 @@ def test_get_klines_parses_candlesticks() -> None:
 
 def test_get_open_interest_parses_response() -> None:
     transport = FakeTransport(
-        {OPEN_INTEREST_PATH: {"openInterest": "10659.509", "symbol": "BTCUSDT", "time": 1589437530011}}
+        {
+            OPEN_INTEREST_PATH: {
+                "openInterest": "10659.509",
+                "symbol": "BTCUSDT",
+                "time": 1589437530011,
+            }
+        }
     )
     client = BinanceFuturesClient(transport=transport)
 

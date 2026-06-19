@@ -59,6 +59,33 @@ PR 3 intentionally does **not** implement:
 - backtest/replay
 - old direct-threshold signal logic
 
+### PR 4 — RFA signal engine
+
+PR 4 adds a pure RFA decision layer on top of `MarketSnapshot`:
+
+- `RFAEngine.evaluate()` for one snapshot
+- `RFAEngine.evaluate_many()` for batches of snapshots
+- multi-component Regime-Flow-Alpha confluence scoring
+- `LONG_CONTINUATION`, `SHORT_CONTINUATION`, `LONG_REVERSAL`, `SHORT_REVERSAL`, and `NO_TRADE` decisions
+- confidence scoring from `0` to `100`
+- context and macro alignment gates from config
+- ATR-based `stop_loss` and `take_profit_levels`
+- risk/reward gate using the configured minimum
+- unit tests for long, short, blocked, low-confidence, and missing-metric cases
+
+PR 4 intentionally does **not** implement:
+
+- Binance API calls inside the engine
+- Telegram API sending
+- active-position checks
+- cooldown checks
+- virtual position lifecycle management
+- trailing stop mutation after entry
+- time stop execution
+- backtest/replay
+- real order execution
+- old direct-threshold signal logic
+
 ## Planned architecture
 
 Development order:
@@ -106,7 +133,13 @@ These endpoints are read-only market-data sources and use only public requests.
 - `taker_buy_sell_ratio`, `taker_buy_volume`, `taker_sell_volume`
 - `liquidation_count`, `liquidation_buy_notional`, `liquidation_sell_notional`, `liquidation_total_notional`
 
-These are inputs for later RFA scoring. They are not standalone trading signals.
+These are inputs for RFA scoring. They are not standalone trading signals.
+
+## RFA Engine scoring in PR 4
+
+The engine scores a snapshot only through multi-factor confluence. It checks regime, 15m entry momentum, 1h context structure, 4h macro direction, taker flow, taker buy/sell pressure, funding, global long/short ratio, liquidation notional, volatility, open interest availability, and risk/reward.
+
+A single threshold crossing is insufficient. A full trade decision requires enough aligned RFA components, context/macro confirmation, valid ATR exits, and configured minimum confidence.
 
 ## Signal types
 
