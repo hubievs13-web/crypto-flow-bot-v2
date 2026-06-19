@@ -37,3 +37,15 @@ rfa_engine:
   strong_signal_confidence: 85
   require_context_alignment: true
   require_macro_alignment: true
+
+calibration:
+  enabled: false
+  objective: risk_adjusted_pnl
+  min_trades: 1
+  drawdown_penalty: 1.0
+  max_trials: 100
+  min_signal_confidence_values: [70, 75, 80, 85]
+  min_risk_reward_values: [1.5, 2.0, 2.5]
+  atr_stop_multiplier_values: [1.0, 1.5, 2.0]
+  trailing_atr_multiplier_values: [0.8, 1.0, 1.2]
+  cooldown_minutes_values: [30, 60, 120]
