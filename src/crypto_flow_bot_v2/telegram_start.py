@@ -17,7 +17,11 @@ from urllib.request import Request, urlopen
 from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.logging import get_logger
 from crypto_flow_bot_v2.start_message import format_start_message
-from crypto_flow_bot_v2.telegram import TelegramAlertError, TelegramTransport, UrlLibTelegramTransport
+from crypto_flow_bot_v2.telegram import (
+    TelegramAlertError,
+    TelegramTransport,
+    UrlLibTelegramTransport,
+)
 
 LOGGER = get_logger(__name__)
 START_COMMAND = "/start"
@@ -92,7 +96,8 @@ class TelegramStartCommandPoller:
         payload = {"timeout": "0"}
         if self._update_offset is not None:
             payload["offset"] = str(self._update_offset)
-        url = f"{self._config.telegram.base_url.rstrip('/')}/bot{bot_token}/getUpdates?{urlencode(payload)}"
+        base_url = self._config.telegram.base_url.rstrip("/")
+        url = f"{base_url}/bot{bot_token}/getUpdates?{urlencode(payload)}"
         request = Request(url, headers={"User-Agent": USER_AGENT}, method="GET")
 
         try:
