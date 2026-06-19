@@ -5,6 +5,14 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      CONFIG_PATH: ${CONFIG_PATH:-config.yaml}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      LIVE_RUNNER_ENABLED: ${LIVE_RUNNER_ENABLED:-false}
+      LIVE_CYCLE_INTERVAL_SECONDS: ${LIVE_CYCLE_INTERVAL_SECONDS:-900}
+      LIVE_RUNNER_MAX_CYCLES: ${LIVE_RUNNER_MAX_CYCLES:-}
+      POSITION_STATE_PATH: ${POSITION_STATE_PATH:-data/positions.json}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data

@@ -16,7 +16,7 @@ A small Ubuntu VPS is enough for the current bot:
 
 ```bash
 sudo apt update
-sudo apt install -y ca-certificates curl git
+sudo apt install -y ca-certificates curl git gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
   | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -64,10 +64,20 @@ Keep the real token only in `.env`. Do not commit `.env`.
 
 ## Smoke test
 
-Run one finite cycle first:
+Build the image first:
 
 ```bash
-LIVE_RUNNER_MAX_CYCLES=1 docker compose up --build
+docker compose build
+```
+
+Run one finite cycle with a one-off container. This avoids the production restart policy, so the
+container stops after the single smoke-test cycle instead of restarting forever:
+
+```bash
+docker compose run --rm \
+  -e LIVE_RUNNER_ENABLED=true \
+  -e LIVE_RUNNER_MAX_CYCLES=1 \
+  crypto-flow-bot-v2
 ```
 
 The bot should start, fetch public market data, and then stop after one cycle.
