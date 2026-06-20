@@ -15,6 +15,8 @@ from crypto_flow_bot_v2.backtest import (
     BacktestReplayEngine,
     BacktestSummary,
     HistoricalSnapshotSource,
+    ReplayEvent,
+    ReplayEventType,
     ReplayResult,
 )
 from crypto_flow_bot_v2.config import BotConfig
@@ -100,7 +102,10 @@ class CalibrationOptimizer:
         snapshots: tuple[MarketSnapshot, ...],
     ) -> CalibrationTrialResult:
         trial_config = config_with_parameters(self._config, parameters)
-        replay = BacktestReplayEngine(trial_config).run(snapshots)
+        try:
+            replay = BacktestReplayEngine(trial_config).run(snapshots)
+        except Exception as exc:
+            replay = _failed_replay_result(snapshots, exc)
         score = score_summary(
             summary=replay.summary,
             drawdown_penalty=self._config.calibration.drawdown_penalty,
@@ -170,7 +175,47 @@ def score_summary(summary: BacktestSummary, drawdown_penalty: float) -> float:
     return round(summary.total_pnl_pct - (summary.max_drawdown_pct * drawdown_penalty), 10)
 
 
+def _failed_replay_result(snapshots: tuple[MarketSnapshot, ...], exc: Exception) -> ReplayResult:
+    error = f"{type(exc).__name__}: {exc}"
+    events: tuple[ReplayEvent, ...] = ()
+    if snapshots:
+        first_snapshot = snapshots[0]
+        events = (
+            ReplayEvent(
+                timestamp=first_snapshot.timestamp,
+                symbol=_normalize_symbol(first_snapshot.symbol),
+                event_type=ReplayEventType.ERROR,
+                error=error,
+            ),
+        )
+    return ReplayResult(
+        events=events,
+        summary=BacktestSummary(
+            symbols=_summary_symbols(snapshots),
+            started_at=snapshots[0].timestamp if snapshots else None,
+            ended_at=snapshots[-1].timestamp if snapshots else None,
+            snapshots_processed=len(snapshots),
+            signals_seen=0,
+            positions_opened=0,
+            positions_closed=0,
+            wins=0,
+            losses=0,
+            total_pnl_pct=0.0,
+            average_pnl_pct=0.0,
+            max_drawdown_pct=0.0,
+            open_positions=0,
+            errors=1,
+        ),
+    )
+
+
+def _summary_symbols(snapshots: tuple[MarketSnapshot, ...]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(_normalize_symbol(snapshot.symbol) for snapshot in snapshots))
+
+
 def _rejected_reason(config: BotConfig, summary: BacktestSummary) -> str | None:
+    if summary.errors:
+        return f"runtime_errors:{summary.errors}"
     if summary.positions_closed < config.calibration.min_trades:
         return f"insufficient_closed_trades:{summary.positions_closed}"
     return None
