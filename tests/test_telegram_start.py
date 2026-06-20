@@ -4,8 +4,9 @@ from crypto_flow_bot_v2.telegram_start import TelegramCommandUpdate, TelegramSta
 
 
 class FakeTelegramTransport:
-    def __init__(self) -> None:
+    def __init__(self, fail_once_chat_ids: set[str] | None = None) -> None:
         self.calls: list[tuple[str, str, str, str]] = []
+        self.fail_once_chat_ids = fail_once_chat_ids or set()
 
     def send_message(
         self,
@@ -15,6 +16,9 @@ class FakeTelegramTransport:
         parse_mode: str,
     ) -> TelegramSendResult:
         self.calls.append((bot_token, chat_id, text, parse_mode))
+        if chat_id in self.fail_once_chat_ids:
+            self.fail_once_chat_ids.remove(chat_id)
+            raise RuntimeError(f"send failed for {chat_id}")
         return TelegramSendResult(ok=True, message_id=42)
 
 
@@ -37,6 +41,25 @@ def test_start_poller_replies_to_inbound_start_command(monkeypatch) -> None:
     assert "Привет" in text
     assert "Реальные сделки не открываю" in text
     assert parse_mode == "HTML"
+
+
+def test_start_poller_does_not_advance_offset_past_failed_send(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    transport = FakeTelegramTransport(fail_once_chat_ids={"FAIL_CHAT"})
+    poller = TelegramStartCommandPoller(_config(), transport=transport)
+    updates = (
+        TelegramCommandUpdate(update_id=10, chat_id="FAIL_CHAT", text="/start"),
+        TelegramCommandUpdate(update_id=11, chat_id="OK_CHAT", text="/start"),
+    )
+    poller._get_updates = lambda bot_token: updates  # noqa: SLF001
+
+    first_handled = poller.run_once()
+    second_handled = poller.run_once()
+
+    assert first_handled == 1
+    assert second_handled == 1
+    assert [call[1] for call in transport.calls] == ["FAIL_CHAT", "OK_CHAT", "FAIL_CHAT"]
+    assert poller._update_offset == 12  # noqa: SLF001
 
 
 def test_start_poller_skips_when_bot_token_missing(monkeypatch) -> None:
