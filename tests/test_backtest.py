@@ -40,6 +40,7 @@ def test_backtest_replay_opens_and_closes_virtual_long() -> None:
     assert result.summary.positions_opened == 1
     assert result.summary.positions_closed == 1
     assert result.summary.wins == 1
+    assert result.summary.errors == 0
     assert result.summary.open_positions == 0
     assert closed_events[0].exit_reason is PositionExitReason.TAKE_PROFIT
     assert closed_events[0].pnl_pct == 9.0
@@ -59,6 +60,20 @@ def test_backtest_replay_filters_symbols_before_evaluation() -> None:
     assert result.summary.symbols == ("BTCUSDT",)
     assert result.summary.snapshots_processed == 1
     assert all(event.symbol == "BTCUSDT" for event in result.events)
+
+
+def test_backtest_records_error_event_for_invalid_snapshot_metric() -> None:
+    config = load_config()
+    snapshot = _long_snapshot()
+    snapshot.metrics["entry_return_pct"] = "not numeric"
+
+    result = BacktestReplayEngine(config).run((snapshot,))
+
+    error_events = tuple(event for event in result.events if event.event_type is ReplayEventType.ERROR)
+    assert result.summary.snapshots_processed == 1
+    assert result.summary.errors == 1
+    assert len(error_events) == 1
+    assert "entry_return_pct" in error_events[0].error
 
 
 def test_empty_replay_returns_zero_summary_for_requested_symbols() -> None:
