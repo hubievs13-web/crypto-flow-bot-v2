@@ -1,8 +1,7 @@
 from datetime import UTC, datetime
 
 from crypto_flow_bot_v2.config import BotConfig, parse_config
-from crypto_flow_bot_v2.models import ExitPlan, SignalDecision, SignalDirection, SignalType
-from crypto_flow_bot_v2.models import VirtualPosition
+from crypto_flow_bot_v2.models import ExitPlan, SignalDecision, SignalDirection, SignalType, VirtualPosition
 from crypto_flow_bot_v2.position_manager import (
     PositionEvent,
     PositionEventType,
