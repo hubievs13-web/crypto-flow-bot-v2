@@ -84,6 +84,41 @@ def test_parse_config_rejects_invalid_binance_limit() -> None:
         parse_config(raw)
 
 
+def test_parse_config_rejects_bool_for_required_int() -> None:
+    raw = _valid_raw_config()
+    raw["binance"]["kline_limit"] = True
+
+    with pytest.raises(ValueError, match="kline_limit"):
+        parse_config(raw)
+
+
+def test_parse_config_rejects_bool_for_required_float() -> None:
+    raw = _valid_raw_config()
+    raw["binance"]["timeout_seconds"] = False
+
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        parse_config(raw)
+
+
+def test_parse_config_rejects_bool_for_optional_numeric() -> None:
+    raw = _valid_raw_config()
+    raw["telegram"]["timeout_seconds"] = False
+
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        parse_config(raw)
+
+
+def test_parse_config_accepts_valid_numeric_values() -> None:
+    raw = _valid_raw_config()
+    raw["binance"]["timeout_seconds"] = 7
+    raw["binance"]["kline_limit"] = 100
+
+    config = parse_config(raw)
+
+    assert config.binance.timeout_seconds == 7.0
+    assert config.binance.kline_limit == 100
+
+
 def _valid_raw_config() -> dict[str, object]:
     return {
         "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
