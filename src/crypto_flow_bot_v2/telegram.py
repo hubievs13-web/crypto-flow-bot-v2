@@ -16,11 +16,13 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from crypto_flow_bot_v2.config import BotConfig, TelegramConfig
+from crypto_flow_bot_v2.logging import get_logger
 from crypto_flow_bot_v2.models import SignalDecision, SignalDirection, SignalType, VirtualPosition
 from crypto_flow_bot_v2.position_manager import PositionEvent, PositionEventType
 from crypto_flow_bot_v2.start_message import format_start_message
 
 USER_AGENT = "crypto-flow-bot-v2/0.1.0"
+LOGGER = get_logger(__name__)
 
 
 class TelegramAlertError(RuntimeError):
@@ -31,7 +33,9 @@ class TelegramAlertStatus(StrEnum):
     """Telegram alert delivery result categories."""
 
     SENT = "SENT"
+    PARTIAL = "PARTIAL"
     SKIPPED = "SKIPPED"
+    ERROR = "ERROR"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +53,22 @@ class TelegramAlertResult:
     status: TelegramAlertStatus
     message: str
     send_result: TelegramSendResult | None = None
+    send_results: tuple[TelegramSendResult, ...] = ()
+    error_messages: tuple[str, ...] = ()
+
+    @property
+    def sent_count(self) -> int:
+        """Return how many chat sends succeeded."""
+
+        if self.send_results:
+            return len(self.send_results)
+        return 1 if self.send_result is not None else 0
+
+    @property
+    def error_count(self) -> int:
+        """Return how many chat sends failed."""
+
+        return len(self.error_messages)
 
 
 class TelegramTransport(Protocol):
@@ -197,19 +217,43 @@ class TelegramAlertService:
             )
 
         send_results: list[TelegramSendResult] = []
+        error_messages: list[str] = []
         for chat_id in chat_ids:
-            send_results.append(
-                self._transport.send_message(
-                    bot_token=bot_token,
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode=telegram.parse_mode,
+            try:
+                send_results.append(
+                    self._transport.send_message(
+                        bot_token=bot_token,
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=telegram.parse_mode,
+                    )
                 )
+            except Exception as exc:
+                error_messages.append(f"chat_id={chat_id}: {exc}")
+                LOGGER.exception("failed to send Telegram alert to chat_id=%s", chat_id)
+
+        if send_results and not error_messages:
+            return TelegramAlertResult(
+                status=TelegramAlertStatus.SENT,
+                message="telegram alert sent",
+                send_result=send_results[-1],
+                send_results=tuple(send_results),
+            )
+        if send_results:
+            return TelegramAlertResult(
+                status=TelegramAlertStatus.PARTIAL,
+                message=(
+                    f"telegram alert partially sent: sent={len(send_results)} "
+                    f"errors={len(error_messages)}"
+                ),
+                send_result=send_results[-1],
+                send_results=tuple(send_results),
+                error_messages=tuple(error_messages),
             )
         return TelegramAlertResult(
-            status=TelegramAlertStatus.SENT,
-            message="telegram alert sent",
-            send_result=send_results[-1],
+            status=TelegramAlertStatus.ERROR,
+            message=f"telegram alert failed for all chat ids: errors={len(error_messages)}",
+            error_messages=tuple(error_messages),
         )
 
 
