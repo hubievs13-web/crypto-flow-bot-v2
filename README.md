@@ -15,7 +15,7 @@ PR 1 created the foundation:
 - Python 3.11+ package with `src/` layout
 - typed domain models for snapshots, decisions, exits, and virtual positions
 - YAML configuration loader and validation
-- logging setup
+- console + JSONL file logging setup
 - runnable package entrypoint
 - unit tests for config and models
 - ruff and pytest configuration
@@ -48,6 +48,7 @@ PR 3 adds the normalization layer that converts read-only Binance market data in
 - `MarketSnapshotBuilder.build()` for one symbol
 - `MarketSnapshotBuilder.build_many()` for configured or explicit symbol sets
 - normalized metrics for entry/context/macro price action, ATR volatility, open interest, funding, long/short ratio, taker pressure, and liquidation notional
+- liquidation data is optional: if the Binance liquidation endpoint raises `BinanceDataError`, snapshot building continues with zero liquidation metrics
 - coarse market-regime classification for snapshot context only
 - unit tests using exact-signature fakes
 
@@ -122,6 +123,7 @@ PR 6 adds a Telegram alert layer for RFA decisions and virtual position events:
 - HTML-safe formatters for RFA signals and virtual position opened/closed events
 - environment-based bot token and chat ID lookup
 - disabled/missing-environment safe skips
+- multi-chat delivery with partial-success accounting
 - unit tests with exact-signature fake Telegram transport
 
 PR 6 intentionally does **not** implement:
@@ -194,11 +196,31 @@ Position updates are driven by supplied prices and timestamps. The manager can c
 
 ## Telegram alerts in PR 6
 
-Telegram alerts are disabled by default. To enable them, set `telegram.enabled: true` in `config.yaml` and provide the environment variables named by `bot_token_env` and `chat_id_env` in the environment.
+Telegram alerts are disabled by default in committed `config.yaml`.
+
+To enable Telegram for production:
+
+1. Set `telegram.enabled: true` in `config.yaml`.
+2. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` or the deployment environment.
+3. Keep real secrets out of git.
 
 `TelegramAlertService.send_signal()` sends only fully alertable RFA decisions. `TelegramAlertService.send_position_event()` sends only opened or closed virtual position events.
 
-The package entrypoint loads and validates configuration only. It does not fetch market data, open positions, or send Telegram messages by itself.
+## Entrypoint behavior
+
+`python -m crypto_flow_bot_v2` always loads config and configures logging.
+
+Without `LIVE_RUNNER_ENABLED=true`, the command is a safe startup/config check: it does not fetch market data, open virtual positions, or send Telegram messages.
+
+With `LIVE_RUNNER_ENABLED=true`, the command starts the live Telegram-only runner and the Telegram `/start` poller. The live runner uses public Binance data only, tracks virtual positions only, and never uses Binance private APIs or real order execution.
+
+Useful environment variables:
+
+- `CONFIG_PATH`: config file path, defaults to `config.yaml`
+- `LIVE_RUNNER_ENABLED`: set to `true` to start the live loop
+- `LIVE_CYCLE_INTERVAL_SECONDS`: live loop interval, defaults to `900`
+- `LIVE_RUNNER_MAX_CYCLES`: optional finite-cycle smoke-test limit
+- `POSITION_STATE_PATH`: optional JSON state path for virtual positions, for example `/app/data/positions.json`
 
 ## Signal types
 
@@ -235,6 +257,8 @@ pip install -e ".[dev]"
 
 ## Run
 
+Safe config/logging startup:
+
 ```bash
 python -m crypto_flow_bot_v2
 ```
@@ -245,9 +269,16 @@ Optional config path:
 CONFIG_PATH=config.yaml python -m crypto_flow_bot_v2
 ```
 
+One-cycle live smoke test:
+
+```bash
+LIVE_RUNNER_ENABLED=true LIVE_RUNNER_MAX_CYCLES=1 python -m crypto_flow_bot_v2
+```
+
 ## Checks
 
 ```bash
 pytest
 ruff check .
+python -m crypto_flow_bot_v2
 ```
