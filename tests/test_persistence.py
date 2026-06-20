@@ -13,10 +13,26 @@ from crypto_flow_bot_v2.persistence import (
 from crypto_flow_bot_v2.position_manager import (
     PositionEventType,
     PositionExitReason,
+    PositionManagerSnapshot,
     VirtualPositionManager,
 )
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
+
+
+class SpyPositionStateStore:
+    def __init__(self, snapshot: PositionManagerSnapshot | None = None) -> None:
+        self.snapshot = snapshot or PositionManagerSnapshot()
+        self.load_calls = 0
+        self.save_calls: list[PositionManagerSnapshot] = []
+
+    def load(self) -> PositionManagerSnapshot:
+        self.load_calls += 1
+        return self.snapshot
+
+    def save(self, snapshot: PositionManagerSnapshot) -> None:
+        self.save_calls.append(snapshot)
+        self.snapshot = snapshot
 
 
 def test_json_position_store_round_trips_active_position(tmp_path: Path) -> None:
@@ -56,6 +72,27 @@ def test_json_position_store_persists_cooldown_after_close(tmp_path: Path) -> No
     assert restored.get_active_position("BTCUSDT") is None
     assert restored.is_on_cooldown("BTCUSDT", NOW + timedelta(minutes=20)) is True
     assert restored.is_on_cooldown("BTCUSDT", NOW + timedelta(minutes=80)) is False
+
+
+def test_persistent_manager_does_not_save_during_initialization() -> None:
+    config = _config()
+    store = SpyPositionStateStore()
+
+    manager = PersistentVirtualPositionManager(VirtualPositionManager(config), store)
+
+    assert store.load_calls == 1
+    assert store.save_calls == []
+
+    manager.open_from_decision(_long_decision())
+    manager.update_price("BTCUSDT", price=102.0, timestamp=NOW + timedelta(minutes=15))
+    manager.close_position(
+        symbol="BTCUSDT",
+        price=101.0,
+        timestamp=NOW + timedelta(minutes=30),
+        reason=PositionExitReason.MANUAL,
+    )
+
+    assert len(store.save_calls) == 3
 
 
 def test_json_position_store_rejects_invalid_json(tmp_path: Path) -> None:
