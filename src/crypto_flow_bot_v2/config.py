@@ -204,7 +204,7 @@ def _parse_binance(value: dict[str, Any]) -> BinanceDataConfig:
 
 def _parse_telegram(value: dict[str, Any]) -> TelegramConfig:
     base_url = str(value.get("base_url", DEFAULT_TELEGRAM_BASE_URL)).strip().rstrip("/")
-    timeout_seconds = float(value.get("timeout_seconds", DEFAULT_TELEGRAM_TIMEOUT_SECONDS))
+    timeout_seconds = _optional_float(value, "timeout_seconds", DEFAULT_TELEGRAM_TIMEOUT_SECONDS)
     parse_mode = str(value.get("parse_mode", DEFAULT_TELEGRAM_PARSE_MODE)).strip()
 
     if not base_url:
@@ -238,6 +238,9 @@ def _parse_risk(value: dict[str, Any]) -> RiskConfig:
     atr_tp_multipliers = value.get("atr_tp_multipliers")
     if not isinstance(atr_tp_multipliers, list) or not atr_tp_multipliers:
         msg = "Risk field 'atr_tp_multipliers' must be a non-empty list."
+        raise ValueError(msg)
+    if any(isinstance(item, bool) or not isinstance(item, int | float) for item in atr_tp_multipliers):
+        msg = "Risk field 'atr_tp_multipliers' must contain only numeric values."
         raise ValueError(msg)
 
     return RiskConfig(
@@ -338,7 +341,7 @@ def _required_str(value: dict[str, Any], key: str) -> str:
 
 def _required_float(value: dict[str, Any], key: str) -> float:
     item = value.get(key)
-    if not isinstance(item, int | float):
+    if isinstance(item, bool) or not isinstance(item, int | float):
         msg = f"Config value '{key}' must be numeric."
         raise ValueError(msg)
     return float(item)
@@ -346,7 +349,7 @@ def _required_float(value: dict[str, Any], key: str) -> float:
 
 def _required_int(value: dict[str, Any], key: str) -> int:
     item = value.get(key)
-    if not isinstance(item, int):
+    if isinstance(item, bool) or not isinstance(item, int):
         msg = f"Config value '{key}' must be an integer."
         raise ValueError(msg)
     return item
