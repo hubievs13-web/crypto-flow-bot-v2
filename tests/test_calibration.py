@@ -73,6 +73,22 @@ def test_calibration_optimizer_selects_best_accepted_trial() -> None:
     assert rejected_trials[0].rejected_reason == "insufficient_closed_trades:0"
 
 
+def test_calibration_optimizer_rejects_trials_with_replay_errors() -> None:
+    config = replace(
+        load_config(),
+        calibration=_calibration_config(min_trades=0, min_risk_reward_values=(1.5,)),
+    )
+    snapshot = _long_snapshot()
+    snapshot.metrics["entry_return_pct"] = "not numeric"
+
+    result = CalibrationOptimizer(config).run((snapshot,))
+
+    assert len(result.trials) == 1
+    assert result.best_trial is None
+    assert result.trials[0].replay.summary.errors == 1
+    assert result.trials[0].rejected_reason == "runtime_errors:1"
+
+
 def test_calibration_optimizer_filters_symbols_for_plain_iterables() -> None:
     config = replace(
         load_config(),
