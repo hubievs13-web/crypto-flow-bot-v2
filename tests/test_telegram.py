@@ -95,6 +95,23 @@ def test_telegram_alert_service_sends_alertable_signal(monkeypatch) -> None:
     assert parse_mode == "HTML"
 
 
+def test_telegram_alert_service_sends_alertable_signal_to_multiple_chat_ids(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    monkeypatch.setenv("CHAT_ENV", "111, 222,, -100333")
+    transport = FakeTelegramTransport()
+    service = TelegramAlertService(_config(enabled=True), transport=transport)
+
+    result = service.send_signal(_long_decision())
+
+    assert result.status is TelegramAlertStatus.SENT
+    assert result.send_result == TelegramSendResult(ok=True, message_id=42)
+    assert len(transport.calls) == 3
+    assert [call[0] for call in transport.calls] == ["TOKEN", "TOKEN", "TOKEN"]
+    assert [call[1] for call in transport.calls] == ["111", "222", "-100333"]
+    assert all("RFA SIGNAL" in call[2] for call in transport.calls)
+    assert [call[3] for call in transport.calls] == ["HTML", "HTML", "HTML"]
+
+
 def test_telegram_alert_service_skips_disabled_signal(monkeypatch) -> None:
     monkeypatch.setenv("BOT_ENV", "TOKEN")
     monkeypatch.setenv("CHAT_ENV", "CHAT")
@@ -111,6 +128,19 @@ def test_telegram_alert_service_skips_disabled_signal(monkeypatch) -> None:
 def test_telegram_alert_service_skips_missing_environment(monkeypatch) -> None:
     monkeypatch.delenv("BOT_ENV", raising=False)
     monkeypatch.delenv("CHAT_ENV", raising=False)
+    transport = FakeTelegramTransport()
+    service = TelegramAlertService(_config(enabled=True), transport=transport)
+
+    result = service.send_signal(_long_decision())
+
+    assert result.status is TelegramAlertStatus.SKIPPED
+    assert result.message == "telegram credentials are not configured in environment"
+    assert transport.calls == []
+
+
+def test_telegram_alert_service_skips_empty_chat_id_entries(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    monkeypatch.setenv("CHAT_ENV", " ,,, ")
     transport = FakeTelegramTransport()
     service = TelegramAlertService(_config(enabled=True), transport=transport)
 
