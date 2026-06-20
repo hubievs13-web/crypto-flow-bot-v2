@@ -189,24 +189,36 @@ class TelegramAlertService:
             )
 
         bot_token = os.getenv(telegram.bot_token_env, "").strip()
-        chat_id = os.getenv(telegram.chat_id_env, "").strip()
-        if not bot_token or not chat_id:
+        chat_ids = _parse_chat_ids(os.getenv(telegram.chat_id_env, ""))
+        if not bot_token or not chat_ids:
             return TelegramAlertResult(
                 status=TelegramAlertStatus.SKIPPED,
                 message="telegram credentials are not configured in environment",
             )
 
-        send_result = self._transport.send_message(
-            bot_token=bot_token,
-            chat_id=chat_id,
-            text=text,
-            parse_mode=telegram.parse_mode,
-        )
+        send_results: list[TelegramSendResult] = []
+        for chat_id in chat_ids:
+            send_results.append(
+                self._transport.send_message(
+                    bot_token=bot_token,
+                    chat_id=chat_id,
+                    text=text,
+                    parse_mode=telegram.parse_mode,
+                )
+            )
         return TelegramAlertResult(
             status=TelegramAlertStatus.SENT,
             message="telegram alert sent",
-            send_result=send_result,
+            send_result=send_results[-1],
         )
+
+
+def _parse_chat_ids(raw_chat_ids: str) -> tuple[str, ...]:
+    return tuple(
+        chat_id
+        for chat_id in (part.strip() for part in raw_chat_ids.split(","))
+        if chat_id
+    )
 
 
 def format_signal_decision(decision: SignalDecision, config: BotConfig) -> str:
