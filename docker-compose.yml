@@ -12,7 +12,7 @@ services:
       LIVE_RUNNER_ENABLED: ${LIVE_RUNNER_ENABLED:-false}
       LIVE_CYCLE_INTERVAL_SECONDS: ${LIVE_CYCLE_INTERVAL_SECONDS:-900}
       LIVE_RUNNER_MAX_CYCLES: ${LIVE_RUNNER_MAX_CYCLES:-}
-      POSITION_STATE_PATH: ${POSITION_STATE_PATH:-data/positions.json}
+      POSITION_STATE_PATH: ${POSITION_STATE_PATH:-/app/data/positions.json}
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data
