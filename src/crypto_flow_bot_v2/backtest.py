@@ -27,6 +27,7 @@ class ReplayEventType(StrEnum):
 
     DECISION = "DECISION"
     POSITION_EVENT = "POSITION_EVENT"
+    ERROR = "ERROR"
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,18 +39,23 @@ class ReplayEvent:
     event_type: ReplayEventType
     decision: SignalDecision | None = None
     position_event: PositionEvent | None = None
+    error: str | None = None
 
     def __post_init__(self) -> None:
         has_decision = self.decision is not None
         has_position_event = self.position_event is not None
+        has_error = self.error is not None
         if self.event_type is ReplayEventType.DECISION and not has_decision:
             msg = "decision event requires a SignalDecision payload."
             raise ValueError(msg)
         if self.event_type is ReplayEventType.POSITION_EVENT and not has_position_event:
             msg = "position event requires a PositionEvent payload."
             raise ValueError(msg)
-        if has_decision and has_position_event:
-            msg = "replay event cannot contain both decision and position event payloads."
+        if self.event_type is ReplayEventType.ERROR and not has_error:
+            msg = "error event requires an error message."
+            raise ValueError(msg)
+        if sum((has_decision, has_position_event, has_error)) != 1:
+            msg = "replay event must contain exactly one payload."
             raise ValueError(msg)
 
 
@@ -70,6 +76,7 @@ class BacktestSummary:
     average_pnl_pct: float
     max_drawdown_pct: float
     open_positions: int
+    errors: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,25 +143,28 @@ class BacktestReplayEngine:
         events: list[ReplayEvent] = []
 
         for snapshot in snapshots:
-            decision = self._signal_engine.evaluate(snapshot)
-            events.append(_decision_event(decision))
+            try:
+                decision = self._signal_engine.evaluate(snapshot)
+                events.append(_decision_event(decision))
 
-            price_event = self._position_manager.update_price(
-                symbol=snapshot.symbol,
-                price=snapshot.price,
-                timestamp=snapshot.timestamp,
-            )
-            if price_event.event_type is not PositionEventType.IGNORED:
-                events.append(_position_event(price_event))
+                price_event = self._position_manager.update_price(
+                    symbol=snapshot.symbol,
+                    price=snapshot.price,
+                    timestamp=snapshot.timestamp,
+                )
+                if price_event.event_type is not PositionEventType.IGNORED:
+                    events.append(_position_event(price_event))
 
-            if price_event.event_type is PositionEventType.CLOSED:
-                continue
-            if self._position_manager.has_active_position(snapshot.symbol):
-                continue
+                if price_event.event_type is PositionEventType.CLOSED:
+                    continue
+                if self._position_manager.has_active_position(snapshot.symbol):
+                    continue
 
-            open_event = self._position_manager.open_from_decision(decision)
-            if open_event.event_type is not PositionEventType.IGNORED:
-                events.append(_position_event(open_event))
+                open_event = self._position_manager.open_from_decision(decision)
+                if open_event.event_type is not PositionEventType.IGNORED:
+                    events.append(_position_event(open_event))
+            except Exception as exc:
+                events.append(_error_event(snapshot, exc))
 
         final_events = tuple(events)
         return ReplayResult(
@@ -210,6 +220,15 @@ def _position_event(event: PositionEvent) -> ReplayEvent:
     )
 
 
+def _error_event(snapshot: MarketSnapshot, exc: Exception) -> ReplayEvent:
+    return ReplayEvent(
+        timestamp=snapshot.timestamp,
+        symbol=_normalize_symbol(snapshot.symbol),
+        event_type=ReplayEventType.ERROR,
+        error=f"{type(exc).__name__}: {exc}",
+    )
+
+
 def _build_summary(
     snapshots: tuple[MarketSnapshot, ...],
     events: tuple[ReplayEvent, ...],
@@ -247,6 +266,7 @@ def _build_summary(
         average_pnl_pct=average_pnl,
         max_drawdown_pct=_max_drawdown_pct(pnl_values),
         open_positions=open_positions,
+        errors=sum(1 for event in events if event.event_type is ReplayEventType.ERROR),
     )
 
 
