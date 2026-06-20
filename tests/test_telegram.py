@@ -21,8 +21,9 @@ NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
 class FakeTelegramTransport:
-    def __init__(self) -> None:
+    def __init__(self, fail_chat_ids: set[str] | None = None) -> None:
         self.calls: list[tuple[str, str, str, str]] = []
+        self.fail_chat_ids = fail_chat_ids or set()
 
     def send_message(
         self,
@@ -32,6 +33,8 @@ class FakeTelegramTransport:
         parse_mode: str,
     ) -> TelegramSendResult:
         self.calls.append((bot_token, chat_id, text, parse_mode))
+        if chat_id in self.fail_chat_ids:
+            raise RuntimeError(f"send failed for {chat_id}")
         return TelegramSendResult(ok=True, message_id=42)
 
 
@@ -54,6 +57,7 @@ def test_telegram_alert_service_sends_start_message(monkeypatch) -> None:
 
     assert result.status is TelegramAlertStatus.SENT
     assert result.send_result == TelegramSendResult(ok=True, message_id=42)
+    assert result.sent_count == 1
     assert len(transport.calls) == 1
     bot_token, chat_id, text, parse_mode = transport.calls[0]
     assert bot_token == "TOKEN"
@@ -87,6 +91,7 @@ def test_telegram_alert_service_sends_alertable_signal(monkeypatch) -> None:
 
     assert result.status is TelegramAlertStatus.SENT
     assert result.send_result == TelegramSendResult(ok=True, message_id=42)
+    assert result.sent_count == 1
     assert len(transport.calls) == 1
     bot_token, chat_id, text, parse_mode = transport.calls[0]
     assert bot_token == "TOKEN"
@@ -105,11 +110,41 @@ def test_telegram_alert_service_sends_alertable_signal_to_multiple_chat_ids(monk
 
     assert result.status is TelegramAlertStatus.SENT
     assert result.send_result == TelegramSendResult(ok=True, message_id=42)
+    assert result.sent_count == 3
     assert len(transport.calls) == 3
     assert [call[0] for call in transport.calls] == ["TOKEN", "TOKEN", "TOKEN"]
     assert [call[1] for call in transport.calls] == ["111", "222", "-100333"]
     assert all("RFA SIGNAL" in call[2] for call in transport.calls)
     assert [call[3] for call in transport.calls] == ["HTML", "HTML", "HTML"]
+
+
+def test_telegram_alert_service_continues_when_one_chat_id_fails(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    monkeypatch.setenv("CHAT_ENV", "111, 222, 333")
+    transport = FakeTelegramTransport(fail_chat_ids={"222"})
+    service = TelegramAlertService(_config(enabled=True), transport=transport)
+
+    result = service.send_signal(_long_decision())
+
+    assert result.status is TelegramAlertStatus.PARTIAL
+    assert result.sent_count == 2
+    assert result.error_count == 1
+    assert len(transport.calls) == 3
+    assert [call[1] for call in transport.calls] == ["111", "222", "333"]
+
+
+def test_telegram_alert_service_returns_error_when_all_chat_ids_fail(monkeypatch) -> None:
+    monkeypatch.setenv("BOT_ENV", "TOKEN")
+    monkeypatch.setenv("CHAT_ENV", "111, 222")
+    transport = FakeTelegramTransport(fail_chat_ids={"111", "222"})
+    service = TelegramAlertService(_config(enabled=True), transport=transport)
+
+    result = service.send_signal(_long_decision())
+
+    assert result.status is TelegramAlertStatus.ERROR
+    assert result.sent_count == 0
+    assert result.error_count == 2
+    assert len(transport.calls) == 2
 
 
 def test_telegram_alert_service_skips_disabled_signal(monkeypatch) -> None:
@@ -164,6 +199,9 @@ def test_telegram_alert_service_skips_no_trade_decision(monkeypatch) -> None:
             signal_type=SignalType.NO_TRADE,
             direction=SignalDirection.NONE,
             confidence=65,
+            entry_price=None,
+            stop_loss=None,
+            take_profit_levels=(),
             blocked_reason="confidence_below_signal_minimum",
         )
     )
