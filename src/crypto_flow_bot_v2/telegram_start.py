@@ -50,6 +50,7 @@ class TelegramStartCommandPoller:
         self._transport = transport or UrlLibTelegramTransport.from_config(config.telegram)
         self._poll_interval_seconds = poll_interval_seconds
         self._update_offset: int | None = None
+        self._processed_update_ids: set[int] = set()
 
     def run_forever(self, stop_event: Event) -> None:
         """Poll until stop_event is set."""
@@ -75,22 +76,44 @@ class TelegramStartCommandPoller:
         if not bot_token:
             return 0
 
-        updates = self._get_updates(bot_token)
-        if updates:
-            self._update_offset = max(update.update_id for update in updates) + 1
+        updates = tuple(sorted(self._get_updates(bot_token), key=lambda update: update.update_id))
+        if updates and self._update_offset is None:
+            self._update_offset = min(update.update_id for update in updates)
 
         handled = 0
         for update in updates:
-            if not _is_start_command(update.text):
+            if self._update_offset is not None and update.update_id < self._update_offset:
                 continue
-            self._transport.send_message(
-                bot_token=bot_token,
-                chat_id=update.chat_id,
-                text=format_start_message(),
-                parse_mode=telegram.parse_mode,
-            )
+            if update.update_id in self._processed_update_ids:
+                continue
+            if not _is_start_command(update.text):
+                self._mark_update_processed(update.update_id)
+                continue
+            try:
+                self._transport.send_message(
+                    bot_token=bot_token,
+                    chat_id=update.chat_id,
+                    text=format_start_message(),
+                    parse_mode=telegram.parse_mode,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "failed to send Telegram /start response for update_id=%s chat_id=%s",
+                    update.update_id,
+                    update.chat_id,
+                )
+                continue
             handled += 1
+            self._mark_update_processed(update.update_id)
         return handled
+
+    def _mark_update_processed(self, update_id: int) -> None:
+        self._processed_update_ids.add(update_id)
+        if self._update_offset is None:
+            self._update_offset = update_id
+        while self._update_offset in self._processed_update_ids:
+            self._processed_update_ids.remove(self._update_offset)
+            self._update_offset += 1
 
     def _get_updates(self, bot_token: str) -> tuple[TelegramCommandUpdate, ...]:
         payload = {"timeout": "0"}
