@@ -37,12 +37,19 @@ class FakeSnapshotBuilder:
 
 
 class FakeSignalEngine:
-    def __init__(self, decisions: dict[str, SignalDecision]) -> None:
+    def __init__(
+        self,
+        decisions: dict[str, SignalDecision],
+        failures: set[str] | None = None,
+    ) -> None:
         self.decisions = decisions
+        self.failures = failures or set()
         self.calls: list[MarketSnapshot] = []
 
     def evaluate(self, snapshot: MarketSnapshot) -> SignalDecision:
         self.calls.append(snapshot)
+        if snapshot.symbol in self.failures:
+            raise RuntimeError(f"signal failed for {snapshot.symbol}")
         return self.decisions[snapshot.symbol]
 
 
@@ -59,6 +66,42 @@ class FakeTelegramAlerts:
     def send_position_event(self, event: PositionEvent) -> TelegramAlertResult:
         self.position_event_calls.append(event)
         return TelegramAlertResult(status=self.status, message=self.status.value)
+
+
+class FailingPositionManager:
+    def __init__(
+        self,
+        config: BotConfig,
+        fail_update: bool = False,
+        fail_open: bool = False,
+    ) -> None:
+        self._manager = VirtualPositionManager(config)
+        self.fail_update = fail_update
+        self.fail_open = fail_open
+
+    def active_positions(self):
+        return self._manager.active_positions()
+
+    def update_price(
+        self,
+        symbol: str,
+        price: float,
+        timestamp: datetime,
+        invalidation_reason: str | None = None,
+    ) -> PositionEvent:
+        if self.fail_update:
+            raise RuntimeError(f"update failed for {symbol}")
+        return self._manager.update_price(
+            symbol=symbol,
+            price=price,
+            timestamp=timestamp,
+            invalidation_reason=invalidation_reason,
+        )
+
+    def open_from_decision(self, decision: SignalDecision) -> PositionEvent:
+        if self.fail_open:
+            raise RuntimeError(f"open failed for {decision.symbol}")
+        return self._manager.open_from_decision(decision)
 
 
 def test_run_once_alerts_only_after_position_open() -> None:
@@ -78,6 +121,7 @@ def test_run_once_alerts_only_after_position_open() -> None:
     report = runner.run_once()
 
     assert report.snapshots_built == 1
+    assert report.processing_errors == 0
     assert report.decisions_evaluated == 1
     assert report.positions_opened == 1
     assert report.telegram_alerts_sent == 2
@@ -155,10 +199,94 @@ def test_run_once_continues_when_one_symbol_snapshot_fails() -> None:
 
     assert report.snapshots_built == 1
     assert report.build_errors == 1
+    assert report.processing_errors == 0
     assert report.decisions_evaluated == 1
     assert report.positions_opened == 1
     assert report.telegram_alerts_skipped == 2
     assert builder.calls == ["BTCUSDT", "ETHUSDT"]
+
+
+def test_run_once_continues_when_signal_engine_fails() -> None:
+    config = _config(symbols=("BTCUSDT", "ETHUSDT"))
+    builder = FakeSnapshotBuilder(
+        {
+            "BTCUSDT": _snapshot("BTCUSDT"),
+            "ETHUSDT": _snapshot("ETHUSDT"),
+        }
+    )
+    engine = FakeSignalEngine(
+        {"BTCUSDT": _trade_decision("BTCUSDT")},
+        failures={"ETHUSDT"},
+    )
+    runner = LiveAlertRunner(
+        config=config,
+        snapshot_builder=builder,
+        signal_engine=engine,
+        position_manager=VirtualPositionManager(config),
+        telegram_alerts=FakeTelegramAlerts(status=TelegramAlertStatus.SKIPPED),
+    )
+
+    report = runner.run_once()
+
+    assert report.snapshots_built == 2
+    assert report.processing_errors == 1
+    assert report.decisions_evaluated == 1
+    assert report.positions_opened == 1
+
+
+def test_run_once_continues_when_position_update_fails() -> None:
+    config = _config(symbols=("BTCUSDT", "ETHUSDT"))
+    builder = FakeSnapshotBuilder(
+        {
+            "BTCUSDT": _snapshot("BTCUSDT"),
+            "ETHUSDT": _snapshot("ETHUSDT"),
+        }
+    )
+    engine = FakeSignalEngine({"BTCUSDT": _trade_decision("BTCUSDT")})
+    runner = LiveAlertRunner(
+        config=config,
+        snapshot_builder=builder,
+        signal_engine=engine,
+        position_manager=FailingPositionManager(config, fail_update=True),
+        telegram_alerts=FakeTelegramAlerts(),
+    )
+
+    report = runner.run_once()
+
+    assert report.snapshots_built == 2
+    assert report.processing_errors == 2
+    assert report.decisions_evaluated == 0
+    assert report.positions_opened == 0
+
+
+def test_run_once_continues_when_position_open_fails() -> None:
+    config = _config(symbols=("BTCUSDT", "ETHUSDT"))
+    builder = FakeSnapshotBuilder(
+        {
+            "BTCUSDT": _snapshot("BTCUSDT"),
+            "ETHUSDT": _snapshot("ETHUSDT"),
+        }
+    )
+    engine = FakeSignalEngine(
+        {
+            "BTCUSDT": _trade_decision("BTCUSDT"),
+            "ETHUSDT": _trade_decision("ETHUSDT"),
+        }
+    )
+    runner = LiveAlertRunner(
+        config=config,
+        snapshot_builder=builder,
+        signal_engine=engine,
+        position_manager=FailingPositionManager(config, fail_open=True),
+        telegram_alerts=FakeTelegramAlerts(),
+    )
+
+    report = runner.run_once()
+
+    assert report.snapshots_built == 2
+    assert report.processing_errors == 2
+    assert report.decisions_evaluated == 2
+    assert report.positions_opened == 0
 
 
 def test_run_sleeps_between_finite_cycles() -> None:
@@ -181,6 +309,7 @@ def test_run_sleeps_between_finite_cycles() -> None:
 
     assert stats.cycles == 2
     assert stats.snapshots_built == 2
+    assert stats.processing_errors == 0
     assert stats.decisions_evaluated == 2
     assert sleep_calls == [30]
 
