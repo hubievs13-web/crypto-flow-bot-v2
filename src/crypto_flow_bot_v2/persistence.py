@@ -87,7 +87,6 @@ class PersistentVirtualPositionManager:
         self._manager = manager
         self._store = store
         self._manager.restore_state(store.load())
-        self._save()
 
     def active_positions(self) -> tuple[VirtualPosition, ...]:
         """Return all active virtual positions."""
