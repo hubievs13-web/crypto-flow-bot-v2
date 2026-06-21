@@ -5,14 +5,16 @@ from __future__ import annotations
 import os
 from threading import Event, Thread
 
-from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, load_config
+from crypto_flow_bot_v2.config import DEFAULT_CONFIG_PATH, BotConfig, load_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
 from crypto_flow_bot_v2.logging import configure_logging, get_logger
+from crypto_flow_bot_v2.telegram import TelegramAlertService, TelegramAlertStatus
 from crypto_flow_bot_v2.telegram_start import TelegramStartCommandPoller
 
 LOGGER = get_logger(__name__)
 TRUE_VALUES = {"1", "true", "yes", "on"}
 DEFAULT_LIVE_RUNNER_INTERVAL_SECONDS = 900
+LIVE_RUNNER_STARTUP_MESSAGE = "🚀 Crypto Flow Bot started. Live runner enabled."
 
 
 def main() -> int:
@@ -21,6 +23,7 @@ def main() -> int:
     config_path = os.getenv("CONFIG_PATH", str(DEFAULT_CONFIG_PATH))
     config = load_config(config_path)
     configure_logging(config.logging)
+    live_runner_enabled = _live_runner_enabled()
 
     LOGGER.info(
         "crypto-flow-bot-v2 loaded: symbols=%s entry=%s context=%s macro=%s",
@@ -39,9 +42,10 @@ def main() -> int:
         config.telegram.bot_token_env,
         config.telegram.chat_id_env,
     )
+    _log_startup_diagnostics(config=config, live_runner_enabled=live_runner_enabled)
     LOGGER.info("No Binance private API or real trading execution is active.")
 
-    if not _live_runner_enabled():
+    if not live_runner_enabled:
         LOGGER.info("Live runner disabled. Set LIVE_RUNNER_ENABLED=true to start alerts.")
         return 0
 
@@ -60,6 +64,7 @@ def main() -> int:
         cycle_interval_seconds=cycle_interval_seconds,
         position_state_path=position_state_path,
     )
+    _send_live_runner_startup_message(config)
     start_poller = _start_telegram_start_poller(config)
     try:
         stats = runner.run(max_cycles=max_cycles)
@@ -79,7 +84,43 @@ def main() -> int:
     return 0
 
 
-def _start_telegram_start_poller(config) -> tuple[Event, Thread]:
+def _log_startup_diagnostics(config: BotConfig, live_runner_enabled: bool) -> None:
+    token_present = _env_has_value(config.telegram.bot_token_env)
+    chat_id_present = _env_has_value(config.telegram.chat_id_env)
+    LOGGER.info(
+        "startup diagnostics: LIVE_RUNNER_ENABLED=%s telegram.enabled=%s "
+        "token present: %s chat_id present: %s",
+        live_runner_enabled,
+        config.telegram.enabled,
+        _yes_no(token_present),
+        _yes_no(chat_id_present),
+    )
+    if config.telegram.enabled and (not token_present or not chat_id_present):
+        LOGGER.warning(
+            "Telegram is enabled but messages will not be sent because credentials are missing: "
+            "token present: %s chat_id present: %s bot_token_env=%s chat_id_env=%s",
+            _yes_no(token_present),
+            _yes_no(chat_id_present),
+            config.telegram.bot_token_env,
+            config.telegram.chat_id_env,
+        )
+
+
+def _send_live_runner_startup_message(config: BotConfig) -> None:
+    notifier = TelegramAlertService(config)
+    try:
+        result = notifier._send(LIVE_RUNNER_STARTUP_MESSAGE)  # noqa: SLF001
+    except Exception:
+        LOGGER.exception("failed to send live runner startup Telegram message")
+        return
+
+    if result.status is TelegramAlertStatus.SENT:
+        LOGGER.info("live runner startup Telegram message sent")
+    else:
+        LOGGER.warning("live runner startup Telegram message skipped: %s", result.message)
+
+
+def _start_telegram_start_poller(config: BotConfig) -> tuple[Event, Thread]:
     stop_event = Event()
     poller = TelegramStartCommandPoller(config)
     thread = Thread(
@@ -141,6 +182,14 @@ def _env_optional_str(name: str) -> str | None:
     if raw is None or not raw.strip():
         return None
     return raw.strip()
+
+
+def _env_has_value(name: str) -> bool:
+    return bool(os.getenv(name, "").strip())
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 if __name__ == "__main__":
