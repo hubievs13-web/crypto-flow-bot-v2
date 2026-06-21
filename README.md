@@ -12,7 +12,7 @@ The application is alert-only. It uses public/read-only Binance Futures market-d
 python -m crypto_flow_bot_v2
 ```
 
-Without `LIVE_RUNNER_ENABLED=true`, the entrypoint loads and validates `config.yaml`, configures logging, writes the configured JSONL log file, prints a startup summary, and exits without starting the live loop.
+Without `LIVE_RUNNER_ENABLED=true`, the entrypoint loads and validates `config.yaml`, configures logging, writes the configured JSONL log file, prints a startup summary, logs Telegram credential diagnostics, and exits without starting the live loop.
 
 ## Live runner startup
 
@@ -20,24 +20,32 @@ Without `LIVE_RUNNER_ENABLED=true`, the entrypoint loads and validates `config.y
 LIVE_RUNNER_ENABLED=true python -m crypto_flow_bot_v2
 ```
 
-This starts the Telegram-only live runner. It fetches public market data, builds snapshots, evaluates RFA decisions, updates virtual positions, and sends Telegram alerts only when Telegram is enabled and credentials are configured.
+This starts the Telegram-only live runner. It fetches public market data, builds snapshots, evaluates RFA decisions, updates virtual positions, and sends Telegram alerts when Telegram is enabled and credentials are configured.
+
+When the live runner initializes successfully and Telegram credentials exist, the bot sends this startup alert once:
+
+```text
+🚀 Crypto Flow Bot started. Live runner enabled.
+```
+
+If Telegram is enabled but credentials are missing, startup logs the missing credential state and Telegram messages are skipped without crashing.
 
 A Telegram `/start` poller runs with the live runner. It performs no work when `telegram.enabled: false` or the configured bot token environment variable is empty.
 
 ## Telegram
 
-Telegram is disabled by default:
+Telegram is enabled by default:
 
 ```yaml
 telegram:
-  enabled: false
+  enabled: true
   bot_token_env: TELEGRAM_BOT_TOKEN
   chat_id_env: TELEGRAM_CHAT_ID
 ```
 
 For production alerts:
 
-1. Set `telegram.enabled: true` in `config.yaml`.
+1. Keep `telegram.enabled: true` in `config.yaml`, or omit `telegram.enabled` to use the code default.
 2. Set `TELEGRAM_BOT_TOKEN`.
 3. Set `TELEGRAM_CHAT_ID` to one ID or a comma-separated list.
 4. Set `LIVE_RUNNER_ENABLED=true`.
@@ -47,10 +55,12 @@ To use `TELEGRAM_CHAT_IDS`, set `telegram.chat_id_env: TELEGRAM_CHAT_IDS` in `co
 ## Live runner variables
 
 ```env
-LIVE_RUNNER_ENABLED=false
+LIVE_RUNNER_ENABLED=true
 LIVE_RUNNER_INTERVAL_SECONDS=900
 LIVE_RUNNER_MAX_CYCLES=
 POSITION_STATE_PATH=data/positions.json
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ```
 
 `LIVE_RUNNER_INTERVAL_SECONDS` is preferred. `LIVE_CYCLE_INTERVAL_SECONDS` is still accepted for older deployments.
