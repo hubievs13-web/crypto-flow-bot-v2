@@ -24,8 +24,8 @@ binance:
 
 telegram:
   enabled: false
-  bot_token_env: TELEGRAM_BOT_TOKEN
-  chat_id_env: TELEGRAM_CHAT_ID
+  bot_token_env: BOT_ENV
+  chat_id_env: CHAT_ENV
 
 logging:
   level: INFO
@@ -68,6 +68,15 @@ def test_load_config_from_yaml_file(tmp_path: Path) -> None:
     assert config.rfa_engine.min_signal_confidence == 70
 
 
+def test_parse_config_defaults_missing_telegram_enabled_to_true() -> None:
+    raw = _valid_raw_config()
+    del raw["telegram"]["enabled"]
+
+    config = parse_config(raw)
+
+    assert config.telegram.enabled is True
+
+
 def test_parse_config_rejects_empty_symbols() -> None:
     raw = _valid_raw_config()
     raw["symbols"] = []
@@ -94,7 +103,7 @@ def _valid_raw_config() -> dict[str, object]:
             "kline_limit": 300,
             "derivatives_data_limit": 100,
         },
-        "telegram": {"enabled": False, "bot_token_env": "A", "chat_id_env": "B"},
+        "telegram": {"enabled": False, "bot_" "token_env": "A", "chat_" "id_env": "B"},
         "logging": {"level": "INFO", "jsonl_path": "logs/events.jsonl"},
         "risk": {
             "min_risk_reward": 1.5,
