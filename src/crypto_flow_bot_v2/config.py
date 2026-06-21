@@ -12,6 +12,7 @@ DEFAULT_CONFIG_PATH = Path("config.yaml")
 DEFAULT_TELEGRAM_BASE_URL = "https://api.telegram.org"
 DEFAULT_TELEGRAM_TIMEOUT_SECONDS = 10.0
 DEFAULT_TELEGRAM_PARSE_MODE = "HTML"
+DEFAULT_TELEGRAM_ENABLED = True
 DEFAULT_CALIBRATION_OBJECTIVE = "risk_adjusted_pnl"
 
 
@@ -218,7 +219,7 @@ def _parse_telegram(value: dict[str, Any]) -> TelegramConfig:
         raise ValueError(msg)
 
     return TelegramConfig(
-        enabled=bool(value.get("enabled", False)),
+        enabled=bool(value.get("enabled", DEFAULT_TELEGRAM_ENABLED)),
         bot_token_env=_required_str(value, "bot_token_env"),
         chat_id_env=_required_str(value, "chat_id_env"),
         base_url=base_url,
