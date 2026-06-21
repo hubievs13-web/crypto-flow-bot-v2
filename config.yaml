@@ -15,7 +15,7 @@ binance:
   derivatives_data_limit: 100
 
 telegram:
-  enabled: true
+  enabled: false
   bot_token_env: TELEGRAM_BOT_TOKEN
   chat_id_env: TELEGRAM_CHAT_ID
 
