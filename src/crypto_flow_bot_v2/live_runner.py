@@ -92,6 +92,7 @@ class LiveCycleReport:
     telegram_alerts_skipped: int = 0
     telegram_alert_errors: int = 0
     active_positions: int = 0
+    symbol_errors: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +109,7 @@ class LiveRunStats:
     telegram_alerts_skipped: int
     telegram_alert_errors: int
     last_report: LiveCycleReport | None = None
+    symbol_errors: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +122,7 @@ class _SymbolCycleResult:
     telegram_alerts_sent: int = 0
     telegram_alerts_skipped: int = 0
     telegram_alert_errors: int = 0
+    symbol_error: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,10 +215,12 @@ class LiveAlertRunner:
             telegram_alerts_skipped=sum(result.telegram_alerts_skipped for result in results),
             telegram_alert_errors=sum(result.telegram_alert_errors for result in results),
             active_positions=len(self._position_manager.active_positions()),
+            symbol_errors=sum(result.symbol_error for result in results),
         )
         LOGGER.info(
             "live cycle completed: snapshots=%s build_errors=%s decisions=%s opened=%s "
-            "closed=%s alerts_sent=%s alerts_skipped=%s alert_errors=%s active=%s",
+            "closed=%s alerts_sent=%s alerts_skipped=%s alert_errors=%s active=%s "
+            "symbol_errors=%s",
             report.snapshots_built,
             report.build_errors,
             report.decisions_evaluated,
@@ -225,6 +230,7 @@ class LiveAlertRunner:
             report.telegram_alerts_skipped,
             report.telegram_alert_errors,
             report.active_positions,
+            report.symbol_errors,
         )
         return report
 
@@ -232,21 +238,63 @@ class LiveAlertRunner:
         try:
             snapshot = self._snapshot_builder.build(symbol)
         except Exception:
-            LOGGER.exception("failed to build live snapshot for symbol=%s", symbol)
-            return _SymbolCycleResult(build_error=True)
+            LOGGER.exception("live symbol stage failed: stage=%s symbol=%s", "snapshot_build", symbol)
+            return _SymbolCycleResult(build_error=True, symbol_error=True)
 
         close_alert = _AlertCounter()
-        update_event = self._position_manager.update_price(
-            symbol=snapshot.symbol,
-            price=snapshot.price,
-            timestamp=snapshot.timestamp,
-        )
+        try:
+            update_event = self._position_manager.update_price(
+                symbol=snapshot.symbol,
+                price=snapshot.price,
+                timestamp=snapshot.timestamp,
+            )
+        except Exception:
+            LOGGER.exception(
+                "live symbol stage failed: stage=%s symbol=%s",
+                "position_update",
+                snapshot.symbol,
+            )
+            return _SymbolCycleResult(snapshot_built=True, symbol_error=True)
+
         position_closed = update_event.event_type is PositionEventType.CLOSED
         if position_closed:
             close_alert = self._send_position_event(update_event)
 
-        decision = self._signal_engine.evaluate(snapshot)
-        open_event = self._position_manager.open_from_decision(decision)
+        try:
+            decision = self._signal_engine.evaluate(snapshot)
+        except Exception:
+            LOGGER.exception(
+                "live symbol stage failed: stage=%s symbol=%s",
+                "signal_evaluate",
+                snapshot.symbol,
+            )
+            return _SymbolCycleResult(
+                snapshot_built=True,
+                position_closed=position_closed,
+                telegram_alerts_sent=close_alert.sent,
+                telegram_alerts_skipped=close_alert.skipped,
+                telegram_alert_errors=close_alert.errors,
+                symbol_error=True,
+            )
+
+        try:
+            open_event = self._position_manager.open_from_decision(decision)
+        except Exception:
+            LOGGER.exception(
+                "live symbol stage failed: stage=%s symbol=%s",
+                "position_open",
+                decision.symbol,
+            )
+            return _SymbolCycleResult(
+                snapshot_built=True,
+                decision_evaluated=True,
+                position_closed=position_closed,
+                telegram_alerts_sent=close_alert.sent,
+                telegram_alerts_skipped=close_alert.skipped,
+                telegram_alert_errors=close_alert.errors,
+                symbol_error=True,
+            )
+
         position_opened = open_event.event_type is PositionEventType.OPENED
         open_alerts = _AlertCounter()
         if position_opened:
@@ -290,6 +338,7 @@ class _MutableTotals:
     telegram_alerts_sent: int = 0
     telegram_alerts_skipped: int = 0
     telegram_alert_errors: int = 0
+    symbol_errors: int = 0
 
     def add(self, report: LiveCycleReport) -> None:
         """Add one cycle report to aggregate totals."""
@@ -302,6 +351,7 @@ class _MutableTotals:
         self.telegram_alerts_sent += report.telegram_alerts_sent
         self.telegram_alerts_skipped += report.telegram_alerts_skipped
         self.telegram_alert_errors += report.telegram_alert_errors
+        self.symbol_errors += report.symbol_errors
 
     def to_stats(self, cycles: int, last_report: LiveCycleReport | None) -> LiveRunStats:
         """Convert mutable aggregate totals into an immutable run summary."""
@@ -317,6 +367,7 @@ class _MutableTotals:
             telegram_alerts_skipped=self.telegram_alerts_skipped,
             telegram_alert_errors=self.telegram_alert_errors,
             last_report=last_report,
+            symbol_errors=self.symbol_errors,
         )
 
 
