@@ -8,7 +8,7 @@ def test_env_example_enables_live_runner_by_default() -> None:
     assert "TELEGRAM_BOT_TOKEN=" in content
     assert "TELEGRAM_CHAT_ID=" in content
     assert "Without TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID" in content
-    assert "Telegram messages will not be sent" in content
+    assert "live startup fails fast" in content
 
 
 def test_docker_compose_enables_live_runner_by_default() -> None:
