@@ -38,7 +38,7 @@ When the live runner initializes successfully and Telegram credentials exist, th
 🚀 Crypto Flow Bot started. Live runner enabled.
 ```
 
-If Telegram is enabled but credentials are missing, startup logs the missing credential state and Telegram messages are skipped without crashing.
+If the live runner is enabled and Telegram is enabled but the required Telegram credentials are missing, startup fails fast before the live loop starts. The error lists the missing environment variables and does not print secret values.
 
 A Telegram `/start` poller runs with the live runner. It performs no work when `telegram.enabled: false` or the configured bot token environment variable is empty.
 

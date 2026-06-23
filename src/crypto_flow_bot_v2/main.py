@@ -18,6 +18,10 @@ DEFAULT_LIVE_RUNNER_INTERVAL_SECONDS = 900
 LIVE_RUNNER_STARTUP_MESSAGE = "🚀 Crypto Flow Bot started. Live runner enabled."
 
 
+class LiveRunnerTelegramCredentialsError(RuntimeError):
+    """Raised when live runner Telegram credentials are required but missing."""
+
+
 def main() -> int:
     """Load configuration and either print a safe summary or start the live alert runner."""
 
@@ -52,6 +56,11 @@ def main() -> int:
             "to start 24/7 alerts."
         )
         return 0
+
+    _validate_live_runner_telegram_config(
+        config=config,
+        live_runner_enabled=live_runner_enabled,
+    )
 
     cycle_interval_seconds = _live_runner_interval_seconds()
     max_cycles = _env_optional_int("LIVE_RUNNER_MAX_CYCLES")
@@ -108,6 +117,34 @@ def _log_startup_diagnostics(config: BotConfig, live_runner_enabled: bool) -> No
             config.telegram.bot_token_env,
             config.telegram.chat_id_env,
         )
+
+
+def _validate_live_runner_telegram_config(
+    config: BotConfig,
+    live_runner_enabled: bool,
+) -> None:
+    if not live_runner_enabled or not config.telegram.enabled:
+        return
+
+    missing = _missing_telegram_credential_envs(config)
+    if not missing:
+        return
+
+    message = (
+        "Telegram is enabled for live runner, but required credentials are missing: "
+        f"{', '.join(missing)}"
+    )
+    LOGGER.error(message)
+    raise LiveRunnerTelegramCredentialsError(message)
+
+
+def _missing_telegram_credential_envs(config: BotConfig) -> tuple[str, ...]:
+    missing: list[str] = []
+    if not _env_has_value(config.telegram.bot_token_env):
+        missing.append(config.telegram.bot_token_env)
+    if not _env_has_value(config.telegram.chat_id_env):
+        missing.append(config.telegram.chat_id_env)
+    return tuple(missing)
 
 
 def _send_live_runner_startup_message(config: BotConfig) -> None:
