@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, TypeVar
 
+from crypto_flow_bot_v2.binance.client import BinanceDataError
 from crypto_flow_bot_v2.binance.models import (
     Candlestick,
     FundingRate,
@@ -18,9 +19,10 @@ from crypto_flow_bot_v2.binance.models import (
     TakerBuySellVolumePoint,
 )
 from crypto_flow_bot_v2.config import BotConfig
+from crypto_flow_bot_v2.logging import get_logger
 from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot
 
-
+LOGGER = get_logger(__name__)
 T = TypeVar("T")
 
 
@@ -130,8 +132,9 @@ class MarketSnapshotBuilder:
             period=self._config.timeframes.entry,
             limit=derivatives_limit,
         )
-        liquidation_orders = self._data_client.get_liquidation_orders(
-            normalized_symbol,
+        liquidation_orders = _fetch_optional_liquidation_orders(
+            data_client=self._data_client,
+            symbol=normalized_symbol,
             limit=derivatives_limit,
         )
 
@@ -162,6 +165,22 @@ class MarketSnapshotBuilder:
 
         selected_symbols = self._config.symbols if symbols is None else tuple(symbols)
         return tuple(self.build(symbol) for symbol in selected_symbols)
+
+
+def _fetch_optional_liquidation_orders(
+    data_client: MarketDataClient,
+    symbol: str,
+    limit: int,
+) -> tuple[LiquidationOrder, ...]:
+    try:
+        return data_client.get_liquidation_orders(symbol, limit=limit)
+    except BinanceDataError:
+        LOGGER.exception(
+            "optional Binance liquidation data unavailable; continuing snapshot build without "
+            "liquidation orders: symbol=%s",
+            symbol,
+        )
+        return ()
 
 
 def _build_metrics(

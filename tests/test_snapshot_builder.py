@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from crypto_flow_bot_v2.binance.client import BinanceDataError
 from crypto_flow_bot_v2.binance.models import (
     Candlestick,
     FundingRate,
@@ -26,6 +27,7 @@ class FakeMarketDataClient:
         long_short_points: tuple[LongShortRatioPoint, ...],
         taker_points: tuple[TakerBuySellVolumePoint, ...],
         liquidation_orders: tuple[LiquidationOrder, ...],
+        liquidation_error: Exception | None = None,
     ) -> None:
         self.klines_by_interval = klines_by_interval
         self.open_interest = open_interest
@@ -33,6 +35,7 @@ class FakeMarketDataClient:
         self.long_short_points = long_short_points
         self.taker_points = taker_points
         self.liquidation_orders = liquidation_orders
+        self.liquidation_error = liquidation_error
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def get_klines(
@@ -92,6 +95,8 @@ class FakeMarketDataClient:
         end_time: int | None = None,
     ) -> tuple[LiquidationOrder, ...]:
         self.calls.append(("get_liquidation_orders", (symbol, limit, start_time, end_time)))
+        if self.liquidation_error is not None:
+            raise self.liquidation_error
         return self.liquidation_orders
 
 
@@ -126,6 +131,28 @@ def test_market_snapshot_builder_normalizes_multisource_data() -> None:
         ("get_taker_buy_sell_volume", ("BTCUSDT", "15m", 100, None, None)),
         ("get_liquidation_orders", ("BTCUSDT", 100, None, None)),
     ]
+
+
+def test_market_snapshot_builder_keeps_running_when_liquidation_endpoint_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config = _config()
+    client = _fake_client()
+    client.liquidation_error = BinanceDataError("HTTP 400 for allForceOrders")
+    builder = MarketSnapshotBuilder(data_client=client, config=config)
+
+    with caplog.at_level("ERROR"):
+        snapshot = builder.build("BTCUSDT")
+
+    assert snapshot.metrics["liquidation_count"] == 0
+    assert snapshot.metrics["liquidation_buy_count"] == 0
+    assert snapshot.metrics["liquidation_sell_count"] == 0
+    assert snapshot.metrics["liquidation_total_notional"] == 0.0
+    assert client.calls[-1] == ("get_liquidation_orders", ("BTCUSDT", 100, None, None))
+    assert any(
+        "optional Binance liquidation data unavailable" in record.message
+        for record in caplog.records
+    )
 
 
 def test_market_snapshot_builder_build_many_uses_configured_symbols() -> None:
