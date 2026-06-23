@@ -108,12 +108,12 @@ def _log_startup_diagnostics(config: BotConfig, live_runner_enabled: bool) -> No
         _yes_no(token_present),
         _yes_no(chat_id_present),
     )
-    missing = _missing_telegram_credential_envs(config)
-    if config.telegram.enabled and missing and not live_runner_enabled:
+    if config.telegram.enabled and (not token_present or not chat_id_present):
         LOGGER.warning(
-            "Telegram is enabled but messages will not be sent during config-only startup because "
-            "credentials are missing: missing_env=%s bot_token_env=%s chat_id_env=%s",
-            ",".join(missing),
+            "Telegram is enabled but messages will not be sent because credentials are missing: "
+            "token present: %s chat_id present: %s bot_token_env=%s chat_id_env=%s",
+            _yes_no(token_present),
+            _yes_no(chat_id_present),
             config.telegram.bot_token_env,
             config.telegram.chat_id_env,
         )
