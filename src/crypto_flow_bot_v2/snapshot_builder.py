@@ -9,7 +9,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, TypeVar
 
-from crypto_flow_bot_v2.binance.client import BinanceDataError
 from crypto_flow_bot_v2.binance.models import (
     Candlestick,
     FundingRate,
@@ -174,11 +173,12 @@ def _fetch_optional_liquidation_orders(
 ) -> tuple[LiquidationOrder, ...]:
     try:
         return data_client.get_liquidation_orders(symbol, limit=limit)
-    except BinanceDataError:
+    except Exception as exc:
         LOGGER.exception(
             "optional Binance liquidation data unavailable; continuing snapshot build without "
-            "liquidation orders: symbol=%s",
+            "liquidation orders: symbol=%s error_type=%s",
             symbol,
+            type(exc).__name__,
         )
         return ()
 
@@ -319,14 +319,14 @@ def _last_or_none(values: tuple[T, ...]) -> T | None:
     return values[-1]
 
 
-def _require_minimum_bars(bars: tuple[Candlestick, ...], name: str) -> None:
-    if len(bars) < 2:
-        msg = f"{name} must contain at least two bars."
-        raise SnapshotBuildError(msg)
-
-
 def _normalize_symbol(symbol: str) -> str:
     if not isinstance(symbol, str) or not symbol.strip():
         msg = "symbol must be a non-empty string."
         raise ValueError(msg)
     return symbol.strip().upper()
+
+
+def _require_minimum_bars(bars: tuple[Candlestick, ...], name: str) -> None:
+    if len(bars) < 2:
+        msg = f"{name} requires at least two bars."
+        raise SnapshotBuildError(msg)
