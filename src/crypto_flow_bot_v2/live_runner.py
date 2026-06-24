@@ -239,7 +239,11 @@ class LiveAlertRunner:
         try:
             snapshot = self._snapshot_builder.build(symbol)
         except Exception:
-            LOGGER.exception("live symbol stage failed: stage=%s symbol=%s", "snapshot_build", symbol)
+            LOGGER.exception(
+                "live symbol stage failed: stage=%s symbol=%s",
+                "snapshot_build",
+                symbol,
+            )
             return _SymbolCycleResult(build_error=True, symbol_error=True)
 
         close_alert = _AlertCounter()
