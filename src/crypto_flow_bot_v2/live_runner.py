@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from html import escape
 from pathlib import Path
 from time import sleep
 from typing import Protocol
@@ -17,7 +18,7 @@ from typing import Protocol
 from crypto_flow_bot_v2.binance import BinanceFuturesClient
 from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.logging import get_logger
-from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision, VirtualPosition
+from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision, SignalType, VirtualPosition
 from crypto_flow_bot_v2.persistence import JsonPositionStateStore, PersistentVirtualPositionManager
 from crypto_flow_bot_v2.position_manager import (
     PositionEvent,
@@ -238,7 +239,11 @@ class LiveAlertRunner:
         try:
             snapshot = self._snapshot_builder.build(symbol)
         except Exception:
-            LOGGER.exception("live symbol stage failed: stage=%s symbol=%s", "snapshot_build", symbol)
+            LOGGER.exception(
+                "live symbol stage failed: stage=%s symbol=%s",
+                "snapshot_build",
+                symbol,
+            )
             return _SymbolCycleResult(build_error=True, symbol_error=True)
 
         close_alert = _AlertCounter()
@@ -278,6 +283,10 @@ class LiveAlertRunner:
             )
         _log_decision(decision)
 
+        decision_alert = _AlertCounter()
+        if _is_no_trade_decision(decision):
+            decision_alert = self._send_no_trade_diagnostic(decision)
+
         try:
             open_event = self._position_manager.open_from_decision(decision)
         except Exception:
@@ -286,13 +295,14 @@ class LiveAlertRunner:
                 "position_open",
                 decision.symbol,
             )
+            alerts = _combine_alerts(close_alert, decision_alert)
             return _SymbolCycleResult(
                 snapshot_built=True,
                 decision_evaluated=True,
                 position_closed=position_closed,
-                telegram_alerts_sent=close_alert.sent,
-                telegram_alerts_skipped=close_alert.skipped,
-                telegram_alert_errors=close_alert.errors,
+                telegram_alerts_sent=alerts.sent,
+                telegram_alerts_skipped=alerts.skipped,
+                telegram_alert_errors=alerts.errors,
                 symbol_error=True,
             )
 
@@ -303,7 +313,7 @@ class LiveAlertRunner:
             position_alert = self._send_position_event(open_event)
             open_alerts = _combine_alerts(signal_alert, position_alert)
 
-        alerts = _combine_alerts(close_alert, open_alerts)
+        alerts = _combine_alerts(close_alert, decision_alert, open_alerts)
         return _SymbolCycleResult(
             snapshot_built=True,
             decision_evaluated=True,
@@ -327,6 +337,40 @@ class LiveAlertRunner:
         except Exception:
             LOGGER.exception("failed to send position alert for symbol=%s", event.symbol)
             return _AlertCounter(errors=1)
+
+    def _send_no_trade_diagnostic(self, decision: SignalDecision) -> _AlertCounter:
+        try:
+            sender = getattr(self._telegram_alerts, "send_no_trade_diagnostic", None)
+            if callable(sender):
+                result = sender(decision)
+            else:
+                raw_send = getattr(self._telegram_alerts, "_send", None)
+                if not callable(raw_send):
+                    LOGGER.warning(
+                        "NO_TRADE Telegram diagnostic skipped: no sender available symbol=%s "
+                        "blocked_reason=%s",
+                        decision.symbol,
+                        decision.blocked_reason or "",
+                    )
+                    return _AlertCounter(skipped=1)
+                result = raw_send(_format_no_trade_diagnostic(decision))
+        except Exception:
+            LOGGER.exception(
+                "failed to send NO_TRADE diagnostic for symbol=%s blocked_reason=%s",
+                decision.symbol,
+                decision.blocked_reason or "",
+            )
+            return _AlertCounter(errors=1)
+
+        counter = _counter_from_alert_result(result)
+        if result.status is TelegramAlertStatus.SKIPPED:
+            LOGGER.warning(
+                "NO_TRADE Telegram diagnostic skipped for symbol=%s blocked_reason=%s: %s",
+                decision.symbol,
+                decision.blocked_reason or "",
+                result.message,
+            )
+        return counter
 
 
 @dataclass(slots=True)
@@ -373,8 +417,21 @@ class _MutableTotals:
 
 
 def _log_decision(decision: SignalDecision) -> None:
+    if _is_no_trade_decision(decision):
+        LOGGER.info(
+            "live NO_TRADE: symbol=%s blocked_reason=%s confidence=%s signal_type=%s "
+            "direction=%s reasons=%s",
+            decision.symbol,
+            decision.blocked_reason or "",
+            decision.confidence,
+            decision.signal_type.value,
+            decision.direction.value,
+            " | ".join(decision.reasons),
+        )
+        return
+
     LOGGER.info(
-        "live decision evaluated: symbol=%s signal_type=%s direction=%s confidence=%s "
+        "live TRADE_DECISION: symbol=%s signal_type=%s direction=%s confidence=%s "
         "blocked_reason=%s reasons=%s",
         decision.symbol,
         decision.signal_type.value,
@@ -383,6 +440,26 @@ def _log_decision(decision: SignalDecision) -> None:
         decision.blocked_reason or "",
         " | ".join(decision.reasons),
     )
+
+
+def _is_no_trade_decision(decision: SignalDecision) -> bool:
+    return decision.signal_type is SignalType.NO_TRADE
+
+
+def _format_no_trade_diagnostic(decision: SignalDecision) -> str:
+    lines = [
+        "<b>RFA NO_TRADE diagnostic</b>",
+        f"Symbol: <b>{escape(decision.symbol)}</b>",
+        f"Blocked reason: <code>{escape(decision.blocked_reason or 'none')}</code>",
+        f"Confidence: <b>{decision.confidence}/100</b>",
+        f"Signal type: <code>{escape(decision.signal_type.value)}</code>",
+        f"Direction: <code>{escape(decision.direction.value)}</code>",
+        f"Timestamp: <code>{escape(decision.timestamp.isoformat())}</code>",
+    ]
+    if decision.reasons:
+        lines.extend(("", "<b>Reasons</b>"))
+        lines.extend(f"• {escape(reason)}" for reason in decision.reasons[:8])
+    return "\n".join(lines)
 
 
 def _counter_from_alert_result(result: TelegramAlertResult) -> _AlertCounter:
