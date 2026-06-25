@@ -194,6 +194,7 @@ def _build_metrics(
     liquidation_orders: tuple[LiquidationOrder, ...],
 ) -> dict[str, float | int | str | bool]:
     latest_entry = entry_bars[-1]
+    previous_entry = entry_bars[-2]
     latest_context = context_bars[-1]
     latest_macro = macro_bars[-1]
     latest_funding = _last_or_none(funding_rates)
@@ -209,7 +210,7 @@ def _build_metrics(
         "entry_volume": latest_entry.volume,
         "entry_quote_volume": latest_entry.quote_volume,
         "entry_trade_count": latest_entry.trade_count,
-        "entry_return_pct": _percentage_change(entry_bars[0].close, latest_entry.close),
+        "entry_return_pct": _percentage_change(previous_entry.close, latest_entry.close),
         "context_return_pct": _percentage_change(context_bars[0].close, latest_context.close),
         "macro_return_pct": _percentage_change(macro_bars[0].close, latest_macro.close),
         "entry_atr": entry_atr,
