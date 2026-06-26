@@ -82,6 +82,29 @@ class ExitPlan:
 
 
 @dataclass(frozen=True, slots=True)
+class SignalScoreBreakdown:
+    """Optional score audit trail added by post-RFA scoring layers."""
+
+    base_score: int
+    regime: str
+    regime_confidence: float
+    regime_adjustment: int
+    final_score: int
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if not 0 <= self.base_score <= 100:
+            msg = "base_score must be between 0 and 100."
+            raise ValueError(msg)
+        if not 0 <= self.final_score <= 100:
+            msg = "final_score must be between 0 and 100."
+            raise ValueError(msg)
+        if not 0.0 <= self.regime_confidence <= 1.0:
+            msg = "regime_confidence must be between 0 and 1."
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True, slots=True)
 class SignalDecision:
     """Output of the future RFA Engine."""
 
@@ -90,11 +113,12 @@ class SignalDecision:
     signal_type: SignalType
     direction: SignalDirection
     confidence: int
-    entry_price: float | None
-    stop_loss: float | None
+    entry_price: float | None = None
+    stop_loss: float | None = None
     take_profit_levels: tuple[float, ...] = field(default_factory=tuple)
     reasons: tuple[str, ...] = field(default_factory=tuple)
     blocked_reason: str | None = None
+    score_breakdown: SignalScoreBreakdown | None = None
 
     def __post_init__(self) -> None:
         _validate_symbol(self.symbol)
