@@ -14,6 +14,8 @@ DEFAULT_TELEGRAM_TIMEOUT_SECONDS = 10.0
 DEFAULT_TELEGRAM_PARSE_MODE = "HTML"
 DEFAULT_TELEGRAM_ENABLED = True
 DEFAULT_CALIBRATION_OBJECTIVE = "risk_adjusted_pnl"
+DEFAULT_MARKET_REGIME_ENABLED = False
+DEFAULT_SIGNAL_GOVERNOR_ENABLED = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +85,41 @@ class RFAEngineConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketRegimeScoringConfig:
+    """Conservative post-RFA Regime-Lite scoring layer settings."""
+
+    enabled: bool
+    mode: str
+    fail_open: bool
+    low_confidence_behavior: str
+    min_confidence_for_adjustment: float
+    max_positive_adjustment: int
+    max_negative_adjustment: int
+    apply_bonus_only_if_base_score_at_least: int
+
+
+@dataclass(frozen=True, slots=True)
+class SignalGovernorRankingConfig:
+    """Ranking keys used by SignalGovernor."""
+
+    primary: str
+    secondary: str
+    tertiary: str
+
+
+@dataclass(frozen=True, slots=True)
+class SignalGovernorConfig:
+    """Protective signal throttling and ranking settings."""
+
+    enabled: bool
+    max_signals_per_scan: int
+    max_signals_per_hour: int
+    per_symbol_cooldown_minutes: int
+    same_direction_cluster_limit: int
+    ranking: SignalGovernorRankingConfig
+
+
+@dataclass(frozen=True, slots=True)
 class CalibrationConfig:
     """Offline calibration and optimization settings."""
 
@@ -109,6 +146,8 @@ class BotConfig:
     logging: LoggingConfig
     risk: RiskConfig
     rfa_engine: RFAEngineConfig
+    market_regime: MarketRegimeScoringConfig
+    signal_governor: SignalGovernorConfig
     calibration: CalibrationConfig
 
 
@@ -138,6 +177,8 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
     logging_config = _parse_logging(_require_mapping(raw, "logging"))
     risk = _parse_risk(_require_mapping(raw, "risk"))
     rfa_engine = _parse_rfa_engine(_require_mapping(raw, "rfa_engine"))
+    market_regime = _parse_market_regime(raw.get("market_regime", {}))
+    signal_governor = _parse_signal_governor(raw.get("signal_governor", {}))
     calibration = _parse_calibration(raw.get("calibration", {}))
 
     return BotConfig(
@@ -148,12 +189,23 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
         logging=logging_config,
         risk=risk,
         rfa_engine=rfa_engine,
+        market_regime=market_regime,
+        signal_governor=signal_governor,
         calibration=calibration,
     )
 
 
 def _require_mapping(raw: dict[str, Any], key: str) -> dict[str, Any]:
     value = raw.get(key)
+    if not isinstance(value, dict):
+        msg = f"Config section '{key}' must be a mapping."
+        raise ValueError(msg)
+    return value
+
+
+def _optional_mapping(value: Any, key: str) -> dict[str, Any]:
+    if value is None:
+        return {}
     if not isinstance(value, dict):
         msg = f"Config section '{key}' must be a mapping."
         raise ValueError(msg)
@@ -259,6 +311,96 @@ def _parse_rfa_engine(value: dict[str, Any]) -> RFAEngineConfig:
         require_context_alignment=bool(value.get("require_context_alignment", True)),
         require_macro_alignment=bool(value.get("require_macro_alignment", True)),
     )
+
+
+def _parse_market_regime(value: Any) -> MarketRegimeScoringConfig:
+    mapping = _optional_mapping(value, "market_regime")
+    config = MarketRegimeScoringConfig(
+        enabled=bool(mapping.get("enabled", DEFAULT_MARKET_REGIME_ENABLED)),
+        mode=str(mapping.get("mode", "scoring_layer")).strip(),
+        fail_open=bool(mapping.get("fail_open", True)),
+        low_confidence_behavior=str(
+            mapping.get("low_confidence_behavior", "no_adjustment")
+        ).strip(),
+        min_confidence_for_adjustment=_optional_float(
+            mapping,
+            "min_confidence_for_adjustment",
+            0.65,
+        ),
+        max_positive_adjustment=_optional_int(mapping, "max_positive_adjustment", 3),
+        max_negative_adjustment=_optional_int(mapping, "max_negative_adjustment", 4),
+        apply_bonus_only_if_base_score_at_least=_optional_int(
+            mapping,
+            "apply_bonus_only_if_base_score_at_least",
+            68,
+        ),
+    )
+    _validate_market_regime(config)
+    return config
+
+
+def _validate_market_regime(config: MarketRegimeScoringConfig) -> None:
+    if config.mode != "scoring_layer":
+        msg = "Market regime field 'mode' must be 'scoring_layer'."
+        raise ValueError(msg)
+    if config.low_confidence_behavior != "no_adjustment":
+        msg = "Market regime field 'low_confidence_behavior' must be 'no_adjustment'."
+        raise ValueError(msg)
+    if not 0.0 <= config.min_confidence_for_adjustment <= 1.0:
+        msg = "Market regime field 'min_confidence_for_adjustment' must be between 0 and 1."
+        raise ValueError(msg)
+    if config.max_positive_adjustment < 0:
+        msg = "Market regime field 'max_positive_adjustment' cannot be negative."
+        raise ValueError(msg)
+    if config.max_negative_adjustment < 0:
+        msg = "Market regime field 'max_negative_adjustment' cannot be negative."
+        raise ValueError(msg)
+    if not 0 <= config.apply_bonus_only_if_base_score_at_least <= 100:
+        msg = "Market regime field 'apply_bonus_only_if_base_score_at_least' must be 0-100."
+        raise ValueError(msg)
+
+
+def _parse_signal_governor(value: Any) -> SignalGovernorConfig:
+    mapping = _optional_mapping(value, "signal_governor")
+    ranking = _optional_mapping(mapping.get("ranking", {}), "signal_governor.ranking")
+    config = SignalGovernorConfig(
+        enabled=bool(mapping.get("enabled", DEFAULT_SIGNAL_GOVERNOR_ENABLED)),
+        max_signals_per_scan=_optional_int(mapping, "max_signals_per_scan", 2),
+        max_signals_per_hour=_optional_int(mapping, "max_signals_per_hour", 4),
+        per_symbol_cooldown_minutes=_optional_int(mapping, "per_symbol_cooldown_minutes", 90),
+        same_direction_cluster_limit=_optional_int(mapping, "same_direction_cluster_limit", 2),
+        ranking=SignalGovernorRankingConfig(
+            primary=str(ranking.get("primary", "final_score")).strip(),
+            secondary=str(ranking.get("secondary", "risk_reward")).strip(),
+            tertiary=str(ranking.get("tertiary", "volume_confirmation")).strip(),
+        ),
+    )
+    _validate_signal_governor(config)
+    return config
+
+
+def _validate_signal_governor(config: SignalGovernorConfig) -> None:
+    if config.max_signals_per_scan <= 0:
+        msg = "Signal governor field 'max_signals_per_scan' must be positive."
+        raise ValueError(msg)
+    if config.max_signals_per_hour <= 0:
+        msg = "Signal governor field 'max_signals_per_hour' must be positive."
+        raise ValueError(msg)
+    if config.per_symbol_cooldown_minutes < 0:
+        msg = "Signal governor field 'per_symbol_cooldown_minutes' cannot be negative."
+        raise ValueError(msg)
+    if config.same_direction_cluster_limit <= 0:
+        msg = "Signal governor field 'same_direction_cluster_limit' must be positive."
+        raise ValueError(msg)
+    allowed = {"final_score", "base_score", "risk_reward", "volume_confirmation"}
+    for key in (
+        config.ranking.primary,
+        config.ranking.secondary,
+        config.ranking.tertiary,
+    ):
+        if key not in allowed:
+            msg = f"Signal governor ranking key '{key}' is not supported."
+            raise ValueError(msg)
 
 
 def _parse_calibration(value: Any) -> CalibrationConfig:
