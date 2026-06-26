@@ -16,6 +16,7 @@ from time import sleep
 from typing import Protocol
 
 from crypto_flow_bot_v2.binance import BinanceFuturesClient
+from crypto_flow_bot_v2.candidate_engine import StatefulCandidateEngine
 from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.logging import get_logger
 from crypto_flow_bot_v2.models import (
@@ -164,6 +165,7 @@ class LiveAlertRunner:
         cycle_interval_seconds: int = 900,
         sleeper: Sleeper = sleep,
         signal_governor: SignalGovernor | None = None,
+        candidate_engine: StatefulCandidateEngine | None = None,
     ) -> None:
         _validate_cycle_interval_seconds(cycle_interval_seconds)
         self._config = config
@@ -174,6 +176,7 @@ class LiveAlertRunner:
         self._cycle_interval_seconds = cycle_interval_seconds
         self._sleeper = sleeper
         self._signal_governor = signal_governor or SignalGovernor(config)
+        self._candidate_engine = candidate_engine or StatefulCandidateEngine(config)
 
     @classmethod
     def from_config(
@@ -209,6 +212,7 @@ class LiveAlertRunner:
             telegram_alerts=TelegramAlertService(config),
             cycle_interval_seconds=cycle_interval_seconds,
             signal_governor=SignalGovernor(config),
+            candidate_engine=StatefulCandidateEngine(config),
         )
 
     def run(self, max_cycles: int | None = None) -> LiveRunStats:
@@ -309,6 +313,26 @@ class LiveAlertRunner:
                 skipped=(),
             )
 
+    def _candidate_engine_decision(
+        self,
+        snapshot: MarketSnapshot,
+        decision: SignalDecision,
+    ) -> SignalDecision | None:
+        if not self._config.candidate_engine.enabled:
+            return decision
+        try:
+            result = self._candidate_engine.process(snapshot=snapshot, decision=decision)
+        except Exception:
+            LOGGER.exception("candidate engine failed; fail-open preserving old signal flow")
+            return decision
+        LOGGER.info(
+            "candidate engine result: symbol=%s decision_emitted=%s reason=%s",
+            snapshot.symbol,
+            result.decision is not None,
+            result.reason,
+        )
+        return result.decision
+
     def _run_symbol_until_decision(self, symbol: str) -> _GovernorSymbolState:
         try:
             snapshot = self._snapshot_builder.build(symbol)
@@ -368,6 +392,7 @@ class LiveAlertRunner:
             decision_alert = self._send_no_trade_diagnostic(decision)
 
         alerts = _combine_alerts(close_alert, decision_alert)
+        candidate_decision = self._candidate_engine_decision(snapshot, decision)
         return _GovernorSymbolState(
             result=_SymbolCycleResult(
                 snapshot_built=True,
@@ -377,7 +402,7 @@ class LiveAlertRunner:
                 telegram_alerts_skipped=alerts.skipped,
                 telegram_alert_errors=alerts.errors,
             ),
-            decision=decision,
+            decision=candidate_decision,
         )
 
     def _run_symbol(self, symbol: str) -> _SymbolCycleResult:
@@ -440,8 +465,11 @@ class LiveAlertRunner:
             telegram_alerts_skipped=close_alert.skipped + decision_alert.skipped,
             telegram_alert_errors=close_alert.errors + decision_alert.errors,
         )
+        candidate_decision = self._candidate_engine_decision(snapshot, decision)
+        if candidate_decision is None:
+            return base_result
         return self._open_after_decision(
-            decision=decision,
+            decision=candidate_decision,
             base_result=base_result,
             governor_decision=None,
         )
@@ -467,6 +495,7 @@ class LiveAlertRunner:
         if not position_opened:
             return base_result
 
+        self._candidate_engine.discard_decision(decision_to_open)
         signal_alert = self._send_signal(decision_to_open)
         if governor_decision is not None and signal_alert.sent > 0:
             self._signal_governor.record_sent(decision_to_open)
