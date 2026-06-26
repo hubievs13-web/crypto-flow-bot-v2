@@ -38,6 +38,27 @@ rfa_engine:
   require_context_alignment: true
   require_macro_alignment: true
 
+market_regime:
+  enabled: true
+  mode: scoring_layer
+  fail_open: true
+  low_confidence_behavior: no_adjustment
+  min_confidence_for_adjustment: 0.65
+  max_positive_adjustment: 3
+  max_negative_adjustment: 4
+  apply_bonus_only_if_base_score_at_least: 68
+
+signal_governor:
+  enabled: true
+  max_signals_per_scan: 2
+  max_signals_per_hour: 4
+  per_symbol_cooldown_minutes: 90
+  same_direction_cluster_limit: 2
+  ranking:
+    primary: final_score
+    secondary: risk_reward
+    tertiary: volume_confirmation
+
 calibration:
   enabled: false
   objective: risk_adjusted_pnl
