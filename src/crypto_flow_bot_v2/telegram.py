@@ -243,6 +243,19 @@ def format_signal_decision(decision: SignalDecision, config: BotConfig) -> str:
     risk_reward = _risk_reward(decision)
     if risk_reward is not None:
         lines.append(f"Risk/reward: <code>{risk_reward:.2f}</code>")
+    if decision.score_breakdown is not None:
+        breakdown = decision.score_breakdown
+        lines.extend(
+            (
+                "",
+                "<b>Score breakdown</b>",
+                f"Base score: <b>{breakdown.base_score}</b>",
+                f"Regime: <code>{escape(breakdown.regime)}</code>",
+                f"Regime confidence: <b>{breakdown.regime_confidence:.2f}</b>",
+                f"Regime adjustment: <b>{breakdown.regime_adjustment:+d}</b>",
+                f"Final score: <b>{breakdown.final_score}</b>",
+            )
+        )
     if decision.reasons:
         lines.extend(("", "<b>Reasons</b>"))
         lines.extend(f"• {escape(reason)}" for reason in decision.reasons[:8])
