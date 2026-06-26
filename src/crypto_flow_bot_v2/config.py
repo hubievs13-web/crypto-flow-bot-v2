@@ -16,6 +16,7 @@ DEFAULT_TELEGRAM_ENABLED = True
 DEFAULT_CALIBRATION_OBJECTIVE = "risk_adjusted_pnl"
 DEFAULT_MARKET_REGIME_ENABLED = False
 DEFAULT_SIGNAL_GOVERNOR_ENABLED = False
+DEFAULT_CANDIDATE_ENGINE_ENABLED = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +121,21 @@ class SignalGovernorConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateEngineConfig:
+    """Lite stateful near-miss candidate tracking settings."""
+
+    enabled: bool
+    min_candidate_score: float
+    signal_threshold: float
+    candidate_ttl_minutes: int
+    min_maturity_ticks: int
+    max_maturity_bonus: float
+    max_candidates_total: int
+    max_candidates_per_symbol: int
+    hard_filters_required: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CalibrationConfig:
     """Offline calibration and optimization settings."""
 
@@ -148,6 +164,7 @@ class BotConfig:
     rfa_engine: RFAEngineConfig
     market_regime: MarketRegimeScoringConfig
     signal_governor: SignalGovernorConfig
+    candidate_engine: CandidateEngineConfig
     calibration: CalibrationConfig
 
 
@@ -179,6 +196,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
     rfa_engine = _parse_rfa_engine(_require_mapping(raw, "rfa_engine"))
     market_regime = _parse_market_regime(raw.get("market_regime", {}))
     signal_governor = _parse_signal_governor(raw.get("signal_governor", {}))
+    candidate_engine = _parse_candidate_engine(raw.get("candidate_engine", {}))
     calibration = _parse_calibration(raw.get("calibration", {}))
 
     return BotConfig(
@@ -191,6 +209,7 @@ def parse_config(raw: dict[str, Any]) -> BotConfig:
         rfa_engine=rfa_engine,
         market_regime=market_regime,
         signal_governor=signal_governor,
+        candidate_engine=candidate_engine,
         calibration=calibration,
     )
 
@@ -401,6 +420,50 @@ def _validate_signal_governor(config: SignalGovernorConfig) -> None:
         if key not in allowed:
             msg = f"Signal governor ranking key '{key}' is not supported."
             raise ValueError(msg)
+
+
+def _parse_candidate_engine(value: Any) -> CandidateEngineConfig:
+    mapping = _optional_mapping(value, "candidate_engine")
+    config = CandidateEngineConfig(
+        enabled=bool(mapping.get("enabled", DEFAULT_CANDIDATE_ENGINE_ENABLED)),
+        min_candidate_score=_optional_float(mapping, "min_candidate_score", 0.65),
+        signal_threshold=_optional_float(mapping, "signal_threshold", 0.80),
+        candidate_ttl_minutes=_optional_int(mapping, "candidate_ttl_minutes", 120),
+        min_maturity_ticks=_optional_int(mapping, "min_maturity_ticks", 2),
+        max_maturity_bonus=_optional_float(mapping, "max_maturity_bonus", 0.05),
+        max_candidates_total=_optional_int(mapping, "max_candidates_total", 100),
+        max_candidates_per_symbol=_optional_int(mapping, "max_candidates_per_symbol", 2),
+        hard_filters_required=bool(mapping.get("hard_filters_required", True)),
+    )
+    _validate_candidate_engine(config)
+    return config
+
+
+def _validate_candidate_engine(config: CandidateEngineConfig) -> None:
+    if not 0.0 <= config.min_candidate_score <= 1.0:
+        msg = "Candidate engine field 'min_candidate_score' must be between 0 and 1."
+        raise ValueError(msg)
+    if not 0.0 <= config.signal_threshold <= 1.0:
+        msg = "Candidate engine field 'signal_threshold' must be between 0 and 1."
+        raise ValueError(msg)
+    if config.min_candidate_score >= config.signal_threshold:
+        msg = "Candidate engine field 'min_candidate_score' must be below signal_threshold."
+        raise ValueError(msg)
+    if config.candidate_ttl_minutes <= 0:
+        msg = "Candidate engine field 'candidate_ttl_minutes' must be positive."
+        raise ValueError(msg)
+    if config.min_maturity_ticks <= 0:
+        msg = "Candidate engine field 'min_maturity_ticks' must be positive."
+        raise ValueError(msg)
+    if not 0.0 <= config.max_maturity_bonus <= 1.0:
+        msg = "Candidate engine field 'max_maturity_bonus' must be between 0 and 1."
+        raise ValueError(msg)
+    if config.max_candidates_total <= 0:
+        msg = "Candidate engine field 'max_candidates_total' must be positive."
+        raise ValueError(msg)
+    if config.max_candidates_per_symbol <= 0:
+        msg = "Candidate engine field 'max_candidates_per_symbol' must be positive."
+        raise ValueError(msg)
 
 
 def _parse_calibration(value: Any) -> CalibrationConfig:
