@@ -94,14 +94,14 @@ class RecordingTelegramAlerts:
 
     def send_no_trade_diagnostic(self, decision: SignalDecision) -> TelegramAlertResult:
         self.no_trade_diagnostic_calls.append(decision)
-        return TelegramAlertResult(status=TelegramAlertStatus.SENT, message="sent")
+        return TelegramAlertResult(status=TelegramAlertStatus.SKIPPED, message="suppressed")
 
     def _send(self, text: str) -> TelegramAlertResult:
         self.raw_send_calls.append(text)
         return TelegramAlertResult(status=TelegramAlertStatus.SENT, message="sent")
 
 
-def test_no_trade_decision_does_not_send_telegram_diagnostic() -> None:
+def test_no_trade_decision_does_not_send_telegram_message() -> None:
     config = _config(symbols=("BTCUSDT",))
     position_manager = RecordingPositionManager()
     telegram_alerts = RecordingTelegramAlerts()
@@ -120,12 +120,12 @@ def test_no_trade_decision_does_not_send_telegram_diagnostic() -> None:
     assert report.positions_opened == 0
     assert report.positions_closed == 0
     assert report.telegram_alerts_sent == 0
-    assert report.telegram_alerts_skipped == 0
+    assert report.telegram_alerts_skipped == 1
     assert report.telegram_alert_errors == 0
     assert len(position_manager.open_calls) == 1
     assert telegram_alerts.signal_calls == []
     assert telegram_alerts.position_event_calls == []
-    assert telegram_alerts.no_trade_diagnostic_calls == []
+    assert len(telegram_alerts.no_trade_diagnostic_calls) == 1
     assert telegram_alerts.raw_send_calls == []
 
 
