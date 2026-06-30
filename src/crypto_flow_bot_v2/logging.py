@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging as std_logging
+from datetime import date, datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,13 @@ from crypto_flow_bot_v2.config import LoggingConfig
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 _JSONL_HANDLER_MARKER = "_crypto_flow_bot_v2_jsonl_handler"
+_RESERVED_LOG_RECORD_ATTRS = frozenset(
+    {
+        *std_logging.makeLogRecord({}).__dict__,
+        "asctime",
+        "message",
+    }
+)
 
 
 class JsonLineFormatter(std_logging.Formatter):
@@ -23,6 +32,7 @@ class JsonLineFormatter(std_logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        payload.update(_extra_record_fields(record))
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
         if record.stack_info:
@@ -52,6 +62,28 @@ def get_logger(name: str) -> std_logging.Logger:
     """Return an application logger."""
 
     return std_logging.getLogger(name)
+
+
+def _extra_record_fields(record: std_logging.LogRecord) -> dict[str, Any]:
+    return {
+        key: _json_safe(value)
+        for key, value in record.__dict__.items()
+        if key not in _RESERVED_LOG_RECORD_ATTRS and not key.startswith("_")
+    }
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, str | int | float | bool):
+        return value
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_json_safe(item) for item in value]
+    return repr(value)
 
 
 def _remove_existing_jsonl_handlers(logger: std_logging.Logger) -> None:
