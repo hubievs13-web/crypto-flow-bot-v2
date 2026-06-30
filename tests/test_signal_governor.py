@@ -7,19 +7,29 @@ from crypto_flow_bot_v2.signal_governor import SignalGovernor
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def test_max_signals_per_scan_limits_signal_count() -> None:
-    governor = SignalGovernor(_config(max_signals_per_scan=2, max_signals_per_hour=10))
+def test_governor_does_not_limit_signals_per_scan() -> None:
+    governor = SignalGovernor(
+        _config(
+            max_signals_per_hour=10,
+            same_direction_cluster_limit=10,
+        )
+    )
     decisions = tuple(_decision(symbol, score) for symbol, score in _scores(5))
 
     result = governor.select(decisions)
 
-    assert [item.decision.symbol for item in result.allowed] == ["BTCUSDT", "ETHUSDT"]
-    assert len(result.skipped) == 3
-    assert all(item.reason == "max_signals_per_scan reached" for item in result.skipped)
+    assert [item.decision.symbol for item in result.allowed] == [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT",
+        "BNBUSDT",
+        "XRPUSDT",
+    ]
+    assert result.skipped == ()
 
 
 def test_max_signals_per_hour_limits_signal_count() -> None:
-    governor = SignalGovernor(_config(max_signals_per_scan=5, max_signals_per_hour=1))
+    governor = SignalGovernor(_config(max_signals_per_hour=1))
     first = _decision("BTCUSDT", 90, timestamp=NOW)
     governor.record_sent(first)
 
@@ -43,7 +53,6 @@ def test_per_symbol_cooldown_works() -> None:
 def test_same_direction_signals_are_limited() -> None:
     governor = SignalGovernor(
         _config(
-            max_signals_per_scan=5,
             max_signals_per_hour=5,
             same_direction_cluster_limit=2,
         )
@@ -62,7 +71,12 @@ def test_same_direction_signals_are_limited() -> None:
 
 
 def test_best_signals_are_ranked_by_score_risk_reward_and_volume_confirmation() -> None:
-    governor = SignalGovernor(_config(max_signals_per_scan=3, max_signals_per_hour=3))
+    governor = SignalGovernor(
+        _config(
+            max_signals_per_hour=3,
+            same_direction_cluster_limit=3,
+        )
+    )
     decisions = (
         _decision("BTCUSDT", 80, take_profit_levels=(104.0, 106.0), reasons=("rfa",)),
         _decision("ETHUSDT", 80, take_profit_levels=(104.0, 108.0), reasons=("rfa",)),
@@ -80,7 +94,7 @@ def test_best_signals_are_ranked_by_score_risk_reward_and_volume_confirmation() 
 
 
 def test_governor_does_not_remove_all_signals_without_reason() -> None:
-    governor = SignalGovernor(_config(max_signals_per_scan=2, max_signals_per_hour=4))
+    governor = SignalGovernor(_config(max_signals_per_hour=4))
 
     result = governor.select((_decision("BTCUSDT", 80), _decision("ETHUSDT", 79)))
 
@@ -121,7 +135,6 @@ def _decision(
 
 def _config(
     *,
-    max_signals_per_scan: int = 2,
     max_signals_per_hour: int = 4,
     per_symbol_cooldown_minutes: int = 90,
     same_direction_cluster_limit: int = 2,
@@ -129,7 +142,6 @@ def _config(
     raw = _raw_config()
     raw["signal_governor"] = {
         "enabled": True,
-        "max_signals_per_scan": max_signals_per_scan,
         "max_signals_per_hour": max_signals_per_hour,
         "per_symbol_cooldown_minutes": per_symbol_cooldown_minutes,
         "same_direction_cluster_limit": same_direction_cluster_limit,
