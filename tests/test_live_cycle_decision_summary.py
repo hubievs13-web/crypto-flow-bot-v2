@@ -70,7 +70,7 @@ class FakeSignalGovernor:
                     passed=True,
                     reason="ranked first",
                     rank=1,
-                    final_score=90.0,
+                    final_score=90,
                 ),
             ),
             skipped=(
@@ -79,7 +79,7 @@ class FakeSignalGovernor:
                     passed=False,
                     reason="max signals per scan",
                     rank=2,
-                    final_score=82.0,
+                    final_score=82,
                 ),
             ),
         )
