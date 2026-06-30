@@ -2,8 +2,13 @@ from datetime import UTC, datetime, timedelta
 
 from crypto_flow_bot_v2.candidate_engine import StatefulCandidateEngine
 from crypto_flow_bot_v2.config import parse_config
-from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot, SignalDecision
-from crypto_flow_bot_v2.models import SignalDirection, SignalType
+from crypto_flow_bot_v2.models import (
+    MarketRegime,
+    MarketSnapshot,
+    SignalDecision,
+    SignalDirection,
+    SignalType,
+)
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 

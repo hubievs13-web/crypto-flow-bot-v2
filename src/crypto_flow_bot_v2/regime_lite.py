@@ -7,8 +7,13 @@ from typing import Protocol
 
 from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.logging import get_logger
-from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision, SignalDirection
-from crypto_flow_bot_v2.models import SignalScoreBreakdown, SignalType
+from crypto_flow_bot_v2.models import (
+    MarketSnapshot,
+    SignalDecision,
+    SignalDirection,
+    SignalScoreBreakdown,
+    SignalType,
+)
 
 LOGGER = get_logger(__name__)
 

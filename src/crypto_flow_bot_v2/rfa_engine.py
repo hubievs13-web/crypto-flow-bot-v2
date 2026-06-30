@@ -129,13 +129,15 @@ class RFAEngine:
                 blocked_reason="macro_alignment_conflict",
             )
 
-        if best.evidence_count < MIN_EVIDENCE_COMPONENTS:
+        min_evidence_components = self._config.rfa_engine.min_evidence_components
+        if best.evidence_count < min_evidence_components:
             return _no_trade(
                 snapshot=snapshot,
                 confidence=best.confidence,
                 reasons=(
                     *best.reasons,
-                    f"only {best.evidence_count} RFA components aligned",
+                    f"only {best.evidence_count} RFA components aligned; "
+                    f"required {min_evidence_components}",
                 ),
                 blocked_reason="insufficient_rfa_confluence",
             )

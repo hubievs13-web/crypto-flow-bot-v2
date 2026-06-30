@@ -10,7 +10,6 @@ from crypto_flow_bot_v2.config import BotConfig
 from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision, SignalDirection, SignalType
 from crypto_flow_bot_v2.rfa_engine import (
     MIN_DIRECTIONAL_EDGE,
-    MIN_EVIDENCE_COMPONENTS,
     _build_exit_levels,
     _metric_float,
     _missing_metrics,
@@ -313,10 +312,13 @@ class StatefulCandidateEngine:
 
         score = best.confidence / 100.0
         missing_conditions = list(_score_missing_conditions(score, self._candidate_config.signal_threshold))
-        if best.evidence_count < MIN_EVIDENCE_COMPONENTS:
+        min_evidence_components = self._config.rfa_engine.min_evidence_components
+        if best.evidence_count < min_evidence_components:
             missing_conditions.append("insufficient_rfa_confluence")
 
-        hard_filters_passed = hard_invalidation is None and best.evidence_count >= MIN_EVIDENCE_COMPONENTS
+        hard_filters_passed = (
+            hard_invalidation is None and best.evidence_count >= min_evidence_components
+        )
         decision = SignalDecision(
             symbol=snapshot.symbol,
             timestamp=snapshot.timestamp,

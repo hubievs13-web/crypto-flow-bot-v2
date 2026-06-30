@@ -12,7 +12,7 @@ from crypto_flow_bot_v2.backtest import (
 )
 from crypto_flow_bot_v2.config import load_config
 from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot
-from crypto_flow_bot_v2.position_manager import PositionExitReason, PositionEventType
+from crypto_flow_bot_v2.position_manager import PositionEventType, PositionExitReason
 
 BASE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
 

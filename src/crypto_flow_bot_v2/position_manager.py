@@ -77,7 +77,10 @@ class PositionManagerSnapshot:
 
         if self.cooldown_until is None:
             return {}
-        return {_normalize_symbol(symbol): timestamp for symbol, timestamp in self.cooldown_until.items()}
+        return {
+            _normalize_symbol(symbol): timestamp
+            for symbol, timestamp in self.cooldown_until.items()
+        }
 
 
 @dataclass(slots=True)

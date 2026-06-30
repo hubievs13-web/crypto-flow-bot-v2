@@ -4,8 +4,14 @@ import pytest
 
 from crypto_flow_bot_v2.config import BotConfig, parse_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
-from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot, SignalDecision
-from crypto_flow_bot_v2.models import SignalDirection, SignalType, VirtualPosition
+from crypto_flow_bot_v2.models import (
+    MarketRegime,
+    MarketSnapshot,
+    SignalDecision,
+    SignalDirection,
+    SignalType,
+    VirtualPosition,
+)
 from crypto_flow_bot_v2.position_manager import PositionEvent, PositionEventType
 from crypto_flow_bot_v2.telegram import TelegramAlertResult, TelegramAlertStatus
 

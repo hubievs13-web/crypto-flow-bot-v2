@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from typing import Any
 
 from crypto_flow_bot_v2 import live_runner, live_symbol_decision_trace
 

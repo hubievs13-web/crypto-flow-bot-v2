@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from crypto_flow_bot_v2 import live_runner
 from crypto_flow_bot_v2.models import MarketSnapshot, SignalDecision
@@ -85,6 +85,21 @@ def _run_once_with_governor(
     return tuple(results_by_symbol[symbol] for symbol in selected_symbols)
 
 
+
+def _with_decision_diagnostics(
+    result: live_runner._SymbolCycleResult,  # noqa: SLF001
+    decision: SignalDecision,
+    candidate_result: object | None,
+) -> live_runner._SymbolCycleResult:  # noqa: SLF001
+    return replace(
+        result,
+        blocked_reason=decision.blocked_reason,
+        candidate_engine_reason=(
+            None if candidate_result is None else getattr(candidate_result, "reason", None)
+        ),
+    )
+
+
 def _select_governed_signals(
     runner: live_runner.LiveAlertRunner,
     trade_candidates: tuple[SignalDecision, ...],
@@ -161,8 +176,9 @@ def _run_symbol_until_decision(
 
     alerts = live_runner._combine_alerts(close_alert, decision_alert)  # noqa: SLF001
     candidate_decision = self._candidate_engine_decision(snapshot, decision)  # noqa: SLF001
-    return _TraceGovernorState(
-        result=live_runner._SymbolCycleResult(  # noqa: SLF001
+    candidate_result = getattr(self, "_last_candidate_engine_result", None)
+    result = _with_decision_diagnostics(
+        live_runner._SymbolCycleResult(  # noqa: SLF001
             snapshot_built=True,
             decision_evaluated=True,
             position_closed=position_closed,
@@ -170,6 +186,11 @@ def _run_symbol_until_decision(
             telegram_alerts_skipped=alerts.skipped,
             telegram_alert_errors=alerts.errors,
         ),
+        decision,
+        candidate_result,
+    )
+    return _TraceGovernorState(
+        result=result,
         decision=candidate_decision,
         rfa_decision=decision,
     )
@@ -233,6 +254,8 @@ def _run_symbol(
         telegram_alert_errors=close_alert.errors + decision_alert.errors,
     )
     candidate_decision = self._candidate_engine_decision(snapshot, decision)  # noqa: SLF001
+    candidate_result = getattr(self, "_last_candidate_engine_result", None)
+    base_result = _with_decision_diagnostics(base_result, decision, candidate_result)
     if candidate_decision is None:
         _log_live_symbol_decision_trace(
             symbol=snapshot.symbol,

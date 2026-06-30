@@ -4,8 +4,14 @@ import pytest
 
 from crypto_flow_bot_v2.config import BotConfig, parse_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
-from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot, SignalDecision, VirtualPosition
-from crypto_flow_bot_v2.models import SignalDirection, SignalType
+from crypto_flow_bot_v2.models import (
+    MarketRegime,
+    MarketSnapshot,
+    SignalDecision,
+    SignalDirection,
+    SignalType,
+    VirtualPosition,
+)
 from crypto_flow_bot_v2.position_manager import (
     PositionEvent,
     PositionEventType,
@@ -222,7 +228,9 @@ def test_run_once_continues_when_one_symbol_snapshot_fails() -> None:
     assert builder.calls == ["BTCUSDT", "ETHUSDT"]
 
 
-def test_run_once_continues_when_signal_engine_fails_for_one_symbol(caplog: pytest.LogCaptureFixture) -> None:
+def test_run_once_continues_when_signal_engine_fails_for_one_symbol(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     config = _config(symbols=("BTCUSDT", "ETHUSDT"))
     builder = FakeSnapshotBuilder(
         {

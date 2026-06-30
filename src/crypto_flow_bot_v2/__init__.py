@@ -29,7 +29,7 @@ def _suppress_no_trade_diagnostic(
     )
 
 
-setattr(TelegramAlertService, "send_no_trade_diagnostic", _suppress_no_trade_diagnostic)
+TelegramAlertService.send_no_trade_diagnostic = _suppress_no_trade_diagnostic  # type: ignore[method-assign]
 install_live_symbol_decision_trace()
 install_candidate_engine_result_trace()
 install_live_cycle_decision_summary()

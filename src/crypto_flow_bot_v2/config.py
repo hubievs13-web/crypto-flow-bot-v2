@@ -17,6 +17,7 @@ DEFAULT_CALIBRATION_OBJECTIVE = "risk_adjusted_pnl"
 DEFAULT_MARKET_REGIME_ENABLED = False
 DEFAULT_SIGNAL_GOVERNOR_ENABLED = False
 DEFAULT_CANDIDATE_ENGINE_ENABLED = False
+DEFAULT_RFA_MIN_EVIDENCE_COMPONENTS = 6
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,6 +82,7 @@ class RFAEngineConfig:
     min_signal_confidence: int
     watch_confidence: int
     strong_signal_confidence: int
+    min_evidence_components: int
     require_context_alignment: bool
     require_macro_alignment: bool
 
@@ -323,10 +325,20 @@ def _parse_risk(value: dict[str, Any]) -> RiskConfig:
 
 
 def _parse_rfa_engine(value: dict[str, Any]) -> RFAEngineConfig:
+    min_evidence_components = _optional_int(
+        value,
+        "min_evidence_components",
+        DEFAULT_RFA_MIN_EVIDENCE_COMPONENTS,
+    )
+    if not 1 <= min_evidence_components <= 10:
+        msg = "RFA engine field 'min_evidence_components' must be between 1 and 10."
+        raise ValueError(msg)
+
     return RFAEngineConfig(
         min_signal_confidence=_required_int(value, "min_signal_confidence"),
         watch_confidence=_required_int(value, "watch_confidence"),
         strong_signal_confidence=_required_int(value, "strong_signal_confidence"),
+        min_evidence_components=min_evidence_components,
         require_context_alignment=bool(value.get("require_context_alignment", True)),
         require_macro_alignment=bool(value.get("require_macro_alignment", True)),
     )

@@ -38,6 +38,16 @@ def _candidate_engine_decision_with_result(
     return _candidate_engine_result(runner, snapshot, decision).decision
 
 
+def _remember_candidate_result(
+    runner: live_runner.LiveAlertRunner,
+    symbol: str,
+    result: CandidateEngineResult,
+) -> CandidateEngineResult:
+    _LAST_CANDIDATE_ENGINE_RESULTS[symbol] = result
+    runner._last_candidate_engine_result = result  # type: ignore[attr-defined]
+    return result
+
+
 def _candidate_engine_result(
     runner: live_runner.LiveAlertRunner,
     snapshot: MarketSnapshot,
@@ -48,19 +58,19 @@ def _candidate_engine_result(
             decision=decision,
             reason="candidate engine disabled",
         )
-        _LAST_CANDIDATE_ENGINE_RESULTS[snapshot.symbol] = result
-        return result
+        return _remember_candidate_result(runner, snapshot.symbol, result)
 
     try:
         result = runner._candidate_engine.process(snapshot=snapshot, decision=decision)  # noqa: SLF001
     except Exception:
-        live_runner.LOGGER.exception("candidate engine failed; fail-open preserving old signal flow")
+        live_runner.LOGGER.exception(
+            "candidate engine failed; fail-open preserving old signal flow"
+        )
         result = CandidateEngineResult(
             decision=decision,
             reason="candidate engine failed; fail-open",
         )
-        _LAST_CANDIDATE_ENGINE_RESULTS[snapshot.symbol] = result
-        return result
+        return _remember_candidate_result(runner, snapshot.symbol, result)
 
     live_runner.LOGGER.info(
         "candidate engine result: symbol=%s decision_emitted=%s reason=%s",
@@ -68,8 +78,7 @@ def _candidate_engine_result(
         result.decision is not None,
         result.reason,
     )
-    _LAST_CANDIDATE_ENGINE_RESULTS[snapshot.symbol] = result
-    return result
+    return _remember_candidate_result(runner, snapshot.symbol, result)
 
 
 def _trace_payload_with_candidate_engine(*args: Any, **kwargs: Any) -> dict[str, object]:

@@ -35,6 +35,7 @@ rfa_engine:
   min_signal_confidence: 70
   watch_confidence: 60
   strong_signal_confidence: 85
+  min_evidence_components: 5
   require_context_alignment: true
   require_macro_alignment: true
 

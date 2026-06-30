@@ -4,7 +4,6 @@ import pytest
 
 from crypto_flow_bot_v2.config import BotConfig, load_config, parse_config
 
-
 VALID_CONFIG = """
 symbols:
   - BTCUSDT

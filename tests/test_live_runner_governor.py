@@ -1,9 +1,15 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from crypto_flow_bot_v2.config import BotConfig, parse_config
 from crypto_flow_bot_v2.live_runner import LiveAlertRunner
-from crypto_flow_bot_v2.models import MarketRegime, MarketSnapshot, SignalDecision
-from crypto_flow_bot_v2.models import SignalDirection, SignalType
+from crypto_flow_bot_v2.models import (
+    MarketRegime,
+    MarketSnapshot,
+    SignalDecision,
+    SignalDirection,
+    SignalType,
+)
 from crypto_flow_bot_v2.position_manager import PositionEvent, PositionEventType
 from crypto_flow_bot_v2.telegram import TelegramAlertResult, TelegramAlertStatus
 
@@ -103,10 +109,14 @@ def test_governor_enabled_sends_only_best_ranked_signals() -> None:
 
     report = runner.run_once()
 
-    assert report.positions_opened == 2
-    assert report.telegram_alerts_sent == 4
-    assert report.telegram_alerts_skipped == 1
-    assert [decision.symbol for decision in alerts.signal_calls] == ["ETHUSDT", "SOLUSDT"]
+    assert report.positions_opened == 3
+    assert report.telegram_alerts_sent == 6
+    assert report.telegram_alerts_skipped == 0
+    assert [decision.symbol for decision in alerts.signal_calls] == [
+        "ETHUSDT",
+        "SOLUSDT",
+        "BTCUSDT",
+    ]
     assert all("governor: passed" in " | ".join(call.reasons) for call in alerts.signal_calls)
 
 
@@ -134,6 +144,7 @@ def test_governor_disabled_keeps_old_send_flow() -> None:
 
 def test_live_runner_does_not_crash_when_signal_layer_fails() -> None:
     config = _config(governor_enabled=True, max_signals_per_scan=2)
+    config = replace(config, symbols=("BTCUSDT",))
     runner = LiveAlertRunner(
         config=config,
         snapshot_builder=FakeSnapshotBuilder(_snapshots(("BTCUSDT",))),
