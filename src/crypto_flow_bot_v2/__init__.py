@@ -13,6 +13,7 @@ from crypto_flow_bot_v2.telegram import (
     TelegramAlertService,
     TelegramAlertStatus,
 )
+from crypto_flow_bot_v2.telegram_send_trace import install_telegram_send_trace
 
 __all__ = ["__version__"]
 __version__ = "0.1.0"
@@ -33,3 +34,4 @@ install_live_symbol_decision_trace()
 install_candidate_engine_result_trace()
 install_live_cycle_decision_summary()
 install_signal_governor_decision_trace()
+install_telegram_send_trace()
