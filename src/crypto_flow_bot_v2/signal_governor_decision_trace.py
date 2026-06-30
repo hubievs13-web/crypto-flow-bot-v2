@@ -19,8 +19,12 @@ def install_signal_governor_decision_trace() -> None:
     if getattr(runner_cls, "_signal_governor_decision_trace_installed", False):
         return
 
-    live_runner._log_governor_passed = _log_governor_passed_with_trace  # type: ignore[assignment]
-    live_runner._log_governor_skipped = _log_governor_skipped_with_trace  # type: ignore[assignment]
+    live_runner._log_governor_passed = (  # type: ignore[assignment]
+        _log_governor_passed_with_trace
+    )
+    live_runner._log_governor_skipped = (  # type: ignore[assignment]
+        _log_governor_skipped_with_trace
+    )
     runner_cls._signal_governor_decision_trace_installed = True
 
 
