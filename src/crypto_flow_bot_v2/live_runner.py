@@ -7,8 +7,9 @@ and never places, modifies, or cancels real exchange orders.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -48,6 +49,7 @@ from crypto_flow_bot_v2.telegram import (
 
 LOGGER = get_logger(__name__)
 Sleeper = Callable[[float], None]
+LIVE_DIAGNOSTIC_SUMMARY_INTERVAL_CYCLES = 3
 
 
 class SnapshotBuilder(Protocol):
@@ -137,6 +139,8 @@ class _SymbolCycleResult:
     telegram_alerts_skipped: int = 0
     telegram_alert_errors: int = 0
     symbol_error: bool = False
+    blocked_reason: str | None = None
+    candidate_engine_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +154,12 @@ class _AlertCounter:
     sent: int = 0
     skipped: int = 0
     errors: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateDecisionResult:
+    decision: SignalDecision | None
+    reason: str
 
 
 class LiveAlertRunner:
@@ -166,8 +176,10 @@ class LiveAlertRunner:
         sleeper: Sleeper = sleep,
         signal_governor: SignalGovernor | None = None,
         candidate_engine: StatefulCandidateEngine | None = None,
+        diagnostic_summary_interval_cycles: int = LIVE_DIAGNOSTIC_SUMMARY_INTERVAL_CYCLES,
     ) -> None:
         _validate_cycle_interval_seconds(cycle_interval_seconds)
+        _validate_diagnostic_summary_interval_cycles(diagnostic_summary_interval_cycles)
         self._config = config
         self._snapshot_builder = snapshot_builder
         self._signal_engine = signal_engine
@@ -177,6 +189,8 @@ class LiveAlertRunner:
         self._sleeper = sleeper
         self._signal_governor = signal_governor or SignalGovernor(config)
         self._candidate_engine = candidate_engine or StatefulCandidateEngine(config)
+        self._diagnostic_summary_interval_cycles = diagnostic_summary_interval_cycles
+        self._diagnostics_window = _LiveDiagnosticsWindow()
 
     @classmethod
     def from_config(
@@ -245,7 +259,19 @@ class LiveAlertRunner:
             active_positions=len(self._position_manager.active_positions()),
         )
         _log_cycle_report(report)
+        self._record_live_diagnostics(report, results)
         return report
+
+    def _record_live_diagnostics(
+        self,
+        report: LiveCycleReport,
+        results: tuple[_SymbolCycleResult, ...],
+    ) -> None:
+        self._diagnostics_window.add(report=report, results=results)
+        if self._diagnostics_window.cycles < self._diagnostic_summary_interval_cycles:
+            return
+        _log_live_diagnostic_summary(self._diagnostics_window)
+        self._diagnostics_window = _LiveDiagnosticsWindow()
 
     def _run_once_with_governor(
         self,
@@ -317,21 +343,24 @@ class LiveAlertRunner:
         self,
         snapshot: MarketSnapshot,
         decision: SignalDecision,
-    ) -> SignalDecision | None:
+    ) -> _CandidateDecisionResult:
         if not self._config.candidate_engine.enabled:
-            return decision
+            return _CandidateDecisionResult(decision=decision, reason="disabled")
         try:
             result = self._candidate_engine.process(snapshot=snapshot, decision=decision)
         except Exception:
             LOGGER.exception("candidate engine failed; fail-open preserving old signal flow")
-            return decision
+            return _CandidateDecisionResult(decision=decision, reason="error_fail_open")
         LOGGER.info(
             "candidate engine result: symbol=%s decision_emitted=%s reason=%s",
             snapshot.symbol,
             result.decision is not None,
             result.reason,
         )
-        return result.decision
+        return _CandidateDecisionResult(
+            decision=result.decision,
+            reason=result.reason or "unknown",
+        )
 
     def _run_symbol_until_decision(self, symbol: str) -> _GovernorSymbolState:
         try:
@@ -392,7 +421,7 @@ class LiveAlertRunner:
             decision_alert = self._send_no_trade_diagnostic(decision)
 
         alerts = _combine_alerts(close_alert, decision_alert)
-        candidate_decision = self._candidate_engine_decision(snapshot, decision)
+        candidate_result = self._candidate_engine_decision(snapshot, decision)
         return _GovernorSymbolState(
             result=_SymbolCycleResult(
                 snapshot_built=True,
@@ -401,8 +430,10 @@ class LiveAlertRunner:
                 telegram_alerts_sent=alerts.sent,
                 telegram_alerts_skipped=alerts.skipped,
                 telegram_alert_errors=alerts.errors,
+                blocked_reason=decision.blocked_reason,
+                candidate_engine_reason=candidate_result.reason,
             ),
-            decision=candidate_decision,
+            decision=candidate_result.decision,
         )
 
     def _run_symbol(self, symbol: str) -> _SymbolCycleResult:
@@ -457,6 +488,7 @@ class LiveAlertRunner:
         if _is_no_trade_decision(decision):
             decision_alert = self._send_no_trade_diagnostic(decision)
 
+        candidate_result = self._candidate_engine_decision(snapshot, decision)
         base_result = _SymbolCycleResult(
             snapshot_built=True,
             decision_evaluated=True,
@@ -464,12 +496,13 @@ class LiveAlertRunner:
             telegram_alerts_sent=close_alert.sent + decision_alert.sent,
             telegram_alerts_skipped=close_alert.skipped + decision_alert.skipped,
             telegram_alert_errors=close_alert.errors + decision_alert.errors,
+            blocked_reason=decision.blocked_reason,
+            candidate_engine_reason=candidate_result.reason,
         )
-        candidate_decision = self._candidate_engine_decision(snapshot, decision)
-        if candidate_decision is None:
+        if candidate_result.decision is None:
             return base_result
         return self._open_after_decision(
-            decision=candidate_decision,
+            decision=candidate_result.decision,
             base_result=base_result,
             governor_decision=None,
         )
@@ -601,6 +634,29 @@ class _MutableTotals:
         )
 
 
+@dataclass(slots=True)
+class _LiveDiagnosticsWindow:
+    cycles: int = 0
+    blocked_reason_counts: Counter[str] = field(default_factory=Counter)
+    candidate_engine_result_counts: Counter[str] = field(default_factory=Counter)
+    decisions_evaluated: int = 0
+    positions_opened: int = 0
+    telegram_alerts_sent: int = 0
+    telegram_alerts_skipped: int = 0
+
+    def add(self, report: LiveCycleReport, results: tuple[_SymbolCycleResult, ...]) -> None:
+        self.cycles += 1
+        self.decisions_evaluated += report.decisions_evaluated
+        self.positions_opened += report.positions_opened
+        self.telegram_alerts_sent += report.telegram_alerts_sent
+        self.telegram_alerts_skipped += report.telegram_alerts_skipped
+        for result in results:
+            if result.blocked_reason:
+                self.blocked_reason_counts[result.blocked_reason] += 1
+            if result.candidate_engine_reason:
+                self.candidate_engine_result_counts[result.candidate_engine_reason] += 1
+
+
 def _report_from_results(
     results: tuple[_SymbolCycleResult, ...],
     active_positions: int,
@@ -635,6 +691,27 @@ def _log_cycle_report(report: LiveCycleReport) -> None:
         report.active_positions,
         report.symbol_errors,
     )
+
+
+def _log_live_diagnostic_summary(window: _LiveDiagnosticsWindow) -> None:
+    LOGGER.info(
+        "live diagnostics summary: cycles=%s blocked_reason_counts=%s "
+        "candidate_engine_result_counts=%s decisions_evaluated=%s opened=%s "
+        "alerts_sent=%s alerts_skipped=%s",
+        window.cycles,
+        _format_counts(window.blocked_reason_counts),
+        _format_counts(window.candidate_engine_result_counts),
+        window.decisions_evaluated,
+        window.positions_opened,
+        window.telegram_alerts_sent,
+        window.telegram_alerts_skipped,
+    )
+
+
+def _format_counts(counts: Counter[str]) -> str:
+    if not counts:
+        return "none"
+    return ",".join(f"{key}={value}" for key, value in sorted(counts.items()))
 
 
 def _log_decision(decision: SignalDecision) -> None:
@@ -778,12 +855,20 @@ def _extend_result(
         telegram_alerts_skipped=result.telegram_alerts_skipped + telegram_alerts_skipped,
         telegram_alert_errors=result.telegram_alert_errors + telegram_alert_errors,
         symbol_error=result.symbol_error or symbol_error,
+        blocked_reason=result.blocked_reason,
+        candidate_engine_reason=result.candidate_engine_reason,
     )
 
 
 def _validate_cycle_interval_seconds(cycle_interval_seconds: int) -> None:
     if cycle_interval_seconds <= 0:
         msg = "cycle_interval_seconds must be positive."
+        raise ValueError(msg)
+
+
+def _validate_diagnostic_summary_interval_cycles(diagnostic_summary_interval_cycles: int) -> None:
+    if diagnostic_summary_interval_cycles <= 0:
+        msg = "diagnostic_summary_interval_cycles must be positive."
         raise ValueError(msg)
 
 
