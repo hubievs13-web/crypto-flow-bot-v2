@@ -5,6 +5,9 @@ from __future__ import annotations
 from crypto_flow_bot_v2.candidate_engine_result_trace import install_candidate_engine_result_trace
 from crypto_flow_bot_v2.live_cycle_decision_summary import install_live_cycle_decision_summary
 from crypto_flow_bot_v2.live_symbol_decision_trace import install_live_symbol_decision_trace
+from crypto_flow_bot_v2.signal_governor_decision_trace import (
+    install_signal_governor_decision_trace,
+)
 from crypto_flow_bot_v2.telegram import (
     TelegramAlertResult,
     TelegramAlertService,
@@ -29,3 +32,4 @@ setattr(TelegramAlertService, "send_no_trade_diagnostic", _suppress_no_trade_dia
 install_live_symbol_decision_trace()
 install_candidate_engine_result_trace()
 install_live_cycle_decision_summary()
+install_signal_governor_decision_trace()
