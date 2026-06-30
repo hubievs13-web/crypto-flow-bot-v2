@@ -19,9 +19,13 @@ def install_candidate_engine_result_trace() -> None:
     if getattr(runner_cls, "_candidate_engine_result_trace_installed", False):
         return
 
-    runner_cls._candidate_engine_decision = _candidate_engine_decision_with_result  # type: ignore[method-assign]
+    runner_cls._candidate_engine_decision = (  # type: ignore[method-assign]
+        _candidate_engine_decision_with_result
+    )
     if hasattr(live_symbol_decision_trace, "_candidate_engine_result"):
-        live_symbol_decision_trace._candidate_engine_result = _candidate_engine_result  # type: ignore[attr-defined]
+        live_symbol_decision_trace._candidate_engine_result = (  # type: ignore[attr-defined]
+            _candidate_engine_result
+        )
     live_symbol_decision_trace._symbol_decision_trace_payload = _trace_payload_with_candidate_engine
     runner_cls._candidate_engine_result_trace_installed = True
 
