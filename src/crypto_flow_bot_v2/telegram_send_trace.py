@@ -19,7 +19,9 @@ def install_telegram_send_trace() -> None:
         return
 
     runner_cls._send_signal = _send_signal_with_trace  # type: ignore[method-assign]
-    runner_cls._send_position_event = _send_position_event_with_trace  # type: ignore[method-assign]
+    runner_cls._send_position_event = (  # type: ignore[method-assign]
+        _send_position_event_with_trace
+    )
     runner_cls._send_no_trade_diagnostic = (  # type: ignore[method-assign]
         _send_no_trade_diagnostic_with_trace
     )
@@ -39,7 +41,10 @@ def _send_signal_with_trace(
             alert_type=alert_type,
             error=str(exc),
         )
-        live_runner.LOGGER.exception("failed to send signal alert for symbol=%s", decision.symbol)
+        live_runner.LOGGER.exception(
+            "failed to send signal alert for symbol=%s",
+            decision.symbol,
+        )
         return live_runner._AlertCounter(errors=1)  # noqa: SLF001
 
     _log_telegram_result(
@@ -63,7 +68,10 @@ def _send_position_event_with_trace(
             alert_type=alert_type,
             error=str(exc),
         )
-        live_runner.LOGGER.exception("failed to send position alert for symbol=%s", event.symbol)
+        live_runner.LOGGER.exception(
+            "failed to send position alert for symbol=%s",
+            event.symbol,
+        )
         return live_runner._AlertCounter(errors=1)  # noqa: SLF001
 
     _log_telegram_result(
@@ -80,7 +88,11 @@ def _send_no_trade_diagnostic_with_trace(
 ) -> live_runner._AlertCounter:  # noqa: SLF001
     alert_type = "no_trade_diagnostic"
     try:
-        sender = getattr(runner._telegram_alerts, "send_no_trade_diagnostic", None)  # noqa: SLF001
+        sender = getattr(
+            runner._telegram_alerts,  # noqa: SLF001
+            "send_no_trade_diagnostic",
+            None,
+        )
         if callable(sender):
             result = sender(decision)
         else:
@@ -99,7 +111,9 @@ def _send_no_trade_diagnostic_with_trace(
                     reason=reason,
                 )
                 return live_runner._AlertCounter(skipped=1)  # noqa: SLF001
-            result = raw_send(live_runner._format_no_trade_diagnostic(decision))  # noqa: SLF001
+            result = raw_send(
+                live_runner._format_no_trade_diagnostic(decision),  # noqa: SLF001
+            )
     except Exception as exc:
         _log_telegram_send_failed(
             symbol=decision.symbol,
