@@ -50,7 +50,6 @@ market_regime:
 
 signal_governor:
   enabled: true
-  max_signals_per_scan: 2
   max_signals_per_hour: 4
   per_symbol_cooldown_minutes: 90
   same_direction_cluster_limit: 2

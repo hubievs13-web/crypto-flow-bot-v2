@@ -78,7 +78,6 @@ class SignalGovernor:
         for item in ranked:
             reason = self._skip_reason(
                 item=item,
-                allowed_count=len(allowed),
                 remaining_hour_slots=remaining_hour_slots,
                 direction_counts=direction_counts,
                 scan_time=scan_time,
@@ -120,13 +119,10 @@ class SignalGovernor:
     def _skip_reason(
         self,
         item: _RankedSignal,
-        allowed_count: int,
         remaining_hour_slots: int,
         direction_counts: Counter[SignalDirection],
         scan_time: datetime,
     ) -> str | None:
-        if allowed_count >= self._config.max_signals_per_scan:
-            return "max_signals_per_scan reached"
         if remaining_hour_slots <= 0:
             return "max_signals_per_hour reached"
         if self._symbol_on_cooldown(item.decision, scan_time):
