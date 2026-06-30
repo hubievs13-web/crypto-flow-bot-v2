@@ -51,7 +51,10 @@ def test_telegram_send_failed_logs_structured_payload(
 def test_telegram_send_sent_does_not_log_noise(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    result = TelegramAlertResult(status=TelegramAlertStatus.SENT, message="telegram alert sent")
+    result = TelegramAlertResult(
+        status=TelegramAlertStatus.SENT,
+        message="telegram alert sent",
+    )
 
     with caplog.at_level("INFO", logger="crypto_flow_bot_v2.live_runner"):
         _log_telegram_result(symbol="SOLUSDT", alert_type="signal", result=result)
