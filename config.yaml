@@ -2,6 +2,10 @@ symbols:
   - BTCUSDT
   - ETHUSDT
   - SOLUSDT
+  - BNBUSDT
+  - XRPUSDT
+  - LINKUSDT
+  - AVAXUSDT
 
 timeframes:
   entry: 15m
@@ -61,11 +65,11 @@ signal_governor:
 
 candidate_engine:
   enabled: true
-  min_candidate_score: 0.60
+  min_candidate_score: 0.56
   signal_threshold: 0.70
   candidate_ttl_minutes: 180
-  min_maturity_ticks: 2
-  max_maturity_bonus: 0.03
+  min_maturity_ticks: 3
+  max_maturity_bonus: 0.04
   max_candidates_total: 100
   max_candidates_per_symbol: 2
   hard_filters_required: true
